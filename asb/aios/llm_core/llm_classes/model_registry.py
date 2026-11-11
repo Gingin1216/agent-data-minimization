@@ -21,6 +21,10 @@ MODEL_REGISTRY = {
     'gpt-4o-mini': GPTLLM,
     'deepseek-chat': GPTLLM,
     'qwen-plus': GPTLLM,
+    'qwen3.8-max': GPTLLM,
+    'qwen3.8-flash': GPTLLM,
+    'qwen3.7-max': GPTLLM,
+    'qwen3.7-flash': GPTLLM,
 
     # claude
     'claude-3-5-sonnet-20240620': ClaudeLLM,
