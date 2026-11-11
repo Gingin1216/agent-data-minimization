@@ -56,6 +56,8 @@ class ModelsEnum(StrEnum):
     """Gemini 2.5 Flash"""
     DEEPSEEK_CHAT = "deepseek-chat"
     """DeepSeek Chat (OpenAI-compatible endpoint, domestic API test)"""
+    QWEN_PLUS = "qwen-plus"
+    """Qwen Plus via Alibaba Cloud Bailian (OpenAI-compatible endpoint)"""
 
 MODEL_PROVIDERS = {
     ModelsEnum.GPT_4O_2024_05_13: "openai",
@@ -85,6 +87,7 @@ MODEL_PROVIDERS = {
     ModelsEnum.GEMINI_2_0_FLASH_001: "google",
     ModelsEnum.GEMINI_2_5_FLASH: "google",
     ModelsEnum.DEEPSEEK_CHAT: "openai",
+    ModelsEnum.QWEN_PLUS: "openai",
 }
 
 
@@ -116,4 +119,5 @@ MODEL_NAMES = {
     "gemini-2.0-flash-001": "AI model developed by Google",
     "gemini-2.5-flash": "AI model developed by Google",
     "deepseek-chat": "DeepSeek",
+    "qwen-plus": "Qwen",
 }
