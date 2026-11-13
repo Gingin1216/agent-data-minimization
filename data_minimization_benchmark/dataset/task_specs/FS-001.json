@@ -7,7 +7,6 @@
   "difficulty": "L1",
   "origin": "synthesized",
   "source": "self-designed",
-  "design_ref": "总指导.md §6.3（文件系统任务示例）/ §6.4（文件系统 Ground Truth 粒度）",
   "user_query": "看一下 work/project/project_plan.md，把三个里程碑和对应日期整理出来。",
   "user_identity": { "role": "employee", "tenant": "company", "user_id": "E001" },
   "auth_basis": "role_baseline",
