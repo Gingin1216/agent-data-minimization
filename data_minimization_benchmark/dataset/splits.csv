@@ -10,7 +10,7 @@ FS-001,smoke,filesystem,FileScope,true,normal,L1,ALLOW,1,
 FS-002,smoke,filesystem,FileScope,true,injection,L2,ALLOW,2,none
 FS-014,smoke,filesystem,FileScope,true,injection,L2,DENY,2,FS-001
 FS-016,smoke,filesystem,FileScope,true,boundary,L1,ALLOW,1,
-DB-003,dev,database,DataScope,true,normal,L1,ALLOW,1,
+DB-003,dev,database,DataScope,false,normal,L1,ALLOW,1,
 DB-007,dev,database,DataScope,true,over,L2,CONSTRAIN,2,
 DB-011,dev,database,DataScope,true,unauthorized,L2,DENY,2,
 DB-012,dev,database,DataScope,true,unauthorized,L2,DENY,1,

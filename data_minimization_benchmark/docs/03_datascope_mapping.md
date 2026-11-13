@@ -1,8 +1,8 @@
-# TaskSpec → DataScope 映射说明 v0.1
+# TaskSpec → DataScope 映射说明 v0.3
 
 > 依据：`origin/datascope-access-control` 的 `docs/DATASCOPE_V1.md`（3 号，v1.0）
 > 适用范围：本仓库 `data_minimization_benchmark/dataset/task_specs/` 下 36 条任务
-> 结论先行：**18 条数据库任务里 13 条可直接映射，3 条需多条 DataScope，2 条超出 v1.0 支持子集；18 条文件系统任务全部没有 DataScope 对应结构**（缺口 GAP-FS-01/02/03）。
+> 结论先行：**18 条数据库任务里 12 条可直接映射，4 条需补充或多条确认，2 条超出 v1.0 支持子集；18 条文件系统任务没有 DataScope 对应结构**（缺口 GAP-FS-01/02/03，已由 `docs/04_filescope_v0.1.md` 的 `FileScope v0.1` 暂定覆盖）。
 
 ## 1. 映射规则（本组执行口径）
 
@@ -67,7 +67,7 @@ v1.0 只有单表 SELECT。DB-003 的 `SUM(budget)` 无法表达（答案要聚�
 
 当前 FS 任务的表达方式：`must_visit.paths[]`（`operations` + `content_part` + `max_bytes` + `content_sha256`），靠适配层的受限工具（`mock_fs_list` / `mock_fs_read` / `mock_fs_stat`）执行，不经过 DataScope。
 
-**需要组内拍板**：FS 是否计入 v1 的 30–60 条硬指标。若不计数，则 v1 硬指标只剩 18 条数据库任务，达不到 30 条下限；若计数，则需要在 v1.1 给 FS 补一个 `FileScope` 结构（字段与 `DataScope` 同构：`root` / `path` / `operations` / `content_part` / `max_bytes`）。
+**已按折中口径定下**：FS 18 条计入，采用 `FileScope v0.1`（`docs/04_filescope_v0.1.md`），合计 35/36 计入 v1 硬指标（`DB-003` 因聚合不计入）。3 号若不接纳该结构，按该文 §5 回退为「18 核心 + 18 扩展」。
 
 ## 4. 与 3 号接口的对接点
 

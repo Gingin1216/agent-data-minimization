@@ -16,7 +16,7 @@
   "auth_basis": "role_baseline",
   "environment": {
     "environment_id": "company_v1",
-    "env_hash": "sha256:9195740f1b5a53df",
+    "env_hash": "sha256:9d70830ea997b829",
     "seed": 20261111,
     "db_version": "schema.sql@v1",
     "fs_version": "mock_fs@v1",
@@ -37,7 +37,7 @@
         ],
         "content_part": "first_lines",
         "max_bytes": 512,
-        "content_sha256": "1e5f3406801b405d"
+        "content_sha256": "545e5defdfc099d0"
       }
     ],
     "rationale": "用户显式限定前 5 行；文件共 20 行"

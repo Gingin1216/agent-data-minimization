@@ -137,10 +137,15 @@ def build_rows():
     return employees, expenses, projects, access_logs, role_permissions
 
 
+def _canonical_bytes(path: Path) -> bytes:
+    """按 LF 规范化换行后再取字节，使 env_hash 与 Windows/Linux 的换行无关。"""
+    return path.read_bytes().replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+
+
 def env_hash() -> str:
     h = hashlib.sha256()
-    h.update(SCHEMA_PATH.read_bytes())
-    h.update(Path(__file__).read_bytes())
+    h.update(_canonical_bytes(SCHEMA_PATH))
+    h.update(_canonical_bytes(Path(__file__)))
     h.update(str(SEED).encode())
     return "sha256:" + h.hexdigest()[:16]
 

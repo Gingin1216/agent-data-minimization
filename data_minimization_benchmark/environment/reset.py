@@ -95,8 +95,13 @@ def main() -> None:
 
     for rel, content in FILES.items():
         path = target / rel
+        if target not in path.resolve().parents:
+            raise SystemExit(f"refuse to write outside {target}: {rel}")
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(content, encoding="utf-8")
+        # newline="\n" 关掉平台换行转换：Windows 与 Linux 生成的文件字节一致，
+        # 否则 content_sha256 会随平台变化。
+        with path.open("w", encoding="utf-8", newline="\n") as f:
+            f.write(content)
 
     print(f"rebuild {target}")
     for rel in FILES:

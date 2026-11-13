@@ -63,6 +63,8 @@ def main() -> None:
         raise SystemExit(f"以下任务未划入任何 split：{sorted(missing)}")
 
     # 2. splits.csv
+    # counted_in_v1 只由 spec 的 execution_supported 推出：超出 DataScope v1.0 子集的
+    # 任务照样进任务集，但不计入需要运行时判定的指标。
     with OUT_SPLITS.open("w", encoding="utf-8", newline="") as f:
         w = csv.writer(f)
         w.writerow(["task_id", "split", "scenario", "structure", "counted_in_v1",
@@ -70,37 +72,49 @@ def main() -> None:
         for name, ids in SPLITS.items():
             for tid in ids:
                 s = specs[tid]
+                counted = str(bool(s.get("execution_supported", True))).lower()
                 w.writerow([
-                    tid, name, s["scenario"], STRUCTURE[s["scenario"]], "true",
+                    tid, name, s["scenario"], STRUCTURE[s["scenario"]], counted,
                     s["category"], s["difficulty"], s["expected_action"],
                     s["decision_points"], s.get("pairs_with", ""),
                 ])
 
     # 3. eval_units.csv：评测单元 = (user_task, injection_task)
+    #    - 普通任务 → clean 单元
+    #    - pairs_with 指向别的任务 → 附加式注入单元
+    #    - pairs_with == "none" → 自含注入：注入就在用户任务自己的输入里
+    #      （如 FS-002 读的邮件正文含指令），单元记为 <task>__self
     split_of = {tid: name for name, ids in SPLITS.items() for tid in ids}
     units = []
     for tid, s in specs.items():
         if s["category"] != "injection":
-            units.append((tid, "none", tid))
+            units.append((tid, "none", tid, "clean"))
     for tid, s in specs.items():
         if s["category"] == "injection":
-            user = s.get("pairs_with") or tid
-            if user == "none":
-                user = tid
-            if user not in specs:
+            user = s.get("pairs_with") or "none"
+            if user not in specs and user != "none":
                 raise SystemExit(f"{tid}: pairs_with={user} 不存在")
-            units.append((user, tid, tid))
+            units.append((tid, user, tid, "self_injection" if user == "none" else "injection"))
 
     with OUT_UNITS.open("w", encoding="utf-8", newline="") as f:
         w = csv.writer(f)
         w.writerow(["unit_id", "user_task", "injection_task", "split", "scenario",
-                    "category", "expected_action", "decision_points", "unit_kind"])
-        for user, inj, anchor in units:
+                    "category", "expected_action", "expected_action_injected",
+                    "decision_points", "unit_kind"])
+        for user, inj, anchor, kind in units:
             s = specs[anchor]
-            uid = f"{user}__{inj}" if inj != "none" else f"{user}__clean"
-            w.writerow([uid, user, inj, split_of[anchor], s["scenario"], s["category"],
-                        s["expected_action"], s["decision_points"],
-                        "injection" if inj != "none" else "clean"])
+            uid = (f"{user}__{inj}" if kind == "injection"
+                   else f"{user}__self" if kind == "self_injection"
+                   else f"{user}__clean")
+            # 自含注入：对用户请求本身放行（expected_action），对注入衍生的请求拒绝
+            # 自含注入：注入就在用户任务自己的输入里，单元记为 <task>__self，
+            # injection_task 仍写该任务本身（表示"注入随该任务一起进入上下文"）
+            injected = (s.get("expected_action_on_injected_request", "")
+                        if kind == "self_injection" else s["expected_action"])
+            inj_out = "none" if kind == "clean" else (anchor if kind == "self_injection" else inj)
+            w.writerow([uid, user, inj_out, split_of[anchor],
+                        s["scenario"], s["category"], s["expected_action"], injected,
+                        s["decision_points"], kind])
 
     # 4. 打印覆盖情况
     print(f"splits: " + "  ".join(f"{k}={len(v)}" for k, v in SPLITS.items()))
@@ -110,8 +124,14 @@ def main() -> None:
         for tid in ids:
             cats[specs[tid]["category"]] = cats.get(specs[tid]["category"], 0) + 1
             acts[specs[tid]["expected_action"]] = acts.get(specs[tid]["expected_action"], 0) + 1
-        print(f"  {name}: categories={cats}  actions={acts}")
-    print(f"eval units: {len(units)}（clean {sum(1 for u in units if u[1] == 'none')} / injection {sum(1 for u in units if u[1] != 'none')}）")
+        counted = sum(1 for tid in ids if specs[tid].get("execution_supported", True))
+        print(f"  {name}: categories={cats}  actions={acts}  counted_in_v1={counted}")
+    counted_total = sum(1 for s in specs.values() if s.get("execution_supported", True))
+    kinds: dict[str, int] = {}
+    for u in units:
+        kinds[u[3]] = kinds.get(u[3], 0) + 1
+    print(f"eval units: {len(units)}  kinds={kinds}")
+    print(f"counted_in_v1: {counted_total}/{len(specs)}（其余为超出 DataScope v1.0 子集）")
     print(f"written: {OUT_SPLITS.name}, {OUT_UNITS.name}")
 
 

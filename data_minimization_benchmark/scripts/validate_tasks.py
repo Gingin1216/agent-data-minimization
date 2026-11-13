@@ -51,6 +51,8 @@ SUPPORTED_OPS = set(ROWFILTER_KEYS)
 
 errors: list[str] = []
 fs_checked = 0
+db_scopes_checked = 0
+paths_checked = 0
 warnings: list[str] = []
 
 
@@ -140,6 +142,30 @@ def check_datascope(tid: str, where: str, ds) -> None:
     if not is_pos_int(ds["max_rows"]):
         err(tid, f"{where} max_rows 必须是严格正整数，实际 {ds['max_rows']!r}")
     check_row_filter(tid, where, ds["row_filter"])
+    check_datascope_sources(tid, where, ds)
+
+
+def check_fs_path(tid: str, where: str, rel) -> None:
+    """拒绝越界路径：绝对路径、盘符、反斜杠、`..`，以及解析后落到 filesystem 之外。"""
+    if not isinstance(rel, str) or not rel:
+        return
+    if rel.startswith("/") or re.match(r"[A-Za-z]:", rel) or "\\" in rel:
+        err(tid, f"{where} 路径必须是相对 filesystem 的 POSIX 路径：{rel!r}")
+        return
+    if any(part == ".." for part in rel.split("/")):
+        err(tid, f"{where} 路径含 '..'，可能越出 environment/filesystem：{rel!r}")
+        return
+    root = FS_ROOT.resolve()
+    resolved = (FS_ROOT / rel).resolve()
+    if resolved != root and root not in resolved.parents:
+        err(tid, f"{where} 路径解析后越出 environment/filesystem：{rel!r} -> {resolved}")
+        return
+    global paths_checked
+    paths_checked += 1
+    if not resolved.exists():
+        err(tid, f"{where} 路径不存在：{rel!r}（先跑 environment/reset.py）")
+    elif resolved.is_file() and resolved.stat().st_size > 10 * 1024 * 1024:
+        warn(tid, f"{where} 文件过大（>{10 * 1024 * 1024} 字节）：{rel!r}")
 
 
 def check_scope_block(tid: str, where: str, block) -> None:
@@ -154,6 +180,8 @@ def check_scope_block(tid: str, where: str, block) -> None:
                 p = ds.get("path") if isinstance(ds, dict) else None
                 if not isinstance(p, str) or not p:
                     err(tid, f"{where}.paths[{i}] 缺少 path")
+                else:
+                    check_fs_path(tid, f"{where}.paths[{i}]", p)
                 ops = ds.get("operations") if isinstance(ds, dict) else None
                 if not isinstance(ops, list) or not ops:
                     err(tid, f"{where}.paths[{i}] 缺少 operations")
@@ -170,11 +198,16 @@ def table_column_sets(block: dict) -> dict[tuple[str, str], set[str]]:
 
 
 def env_hash_now() -> str:
+    """与 init_db.py 的 env_hash() 保持一致：先按 LF 规范化，再哈希。
+
+    这样 Windows（CRLF）与 Linux（LF）算出的环境哈希相同，spec 里的 env_hash
+    不再随检出的换行格式变化。
+    """
     h = hashlib.sha256()
     schema = ENV_DIR / "database" / "schema.sql"
     init = ENV_DIR / "database" / "init_db.py"
-    h.update(schema.read_bytes())
-    h.update(init.read_bytes())
+    h.update(canonical_bytes(schema))
+    h.update(canonical_bytes(init))
     h.update(b"20261111")
     return "sha256:" + h.hexdigest()[:16]
 
@@ -182,8 +215,71 @@ def env_hash_now() -> str:
 FS_ROOT = ENV_DIR / "filesystem"
 
 
+def canonical_bytes(path: Path) -> bytes:
+    """读字节并把 CRLF / CR 统一成 LF，用于跨平台稳定哈希。"""
+    return path.read_bytes().replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+
+
 def file_sha16(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()[:16]
+    return hashlib.sha256(canonical_bytes(path)).hexdigest()[:16]
+
+
+_TABLE_RE = re.compile(r"CREATE TABLE\s+([A-Za-z_][A-Za-z0-9_]*)\s*\((.+?)\n\);", re.S)
+
+
+def parse_schema() -> dict[str, set[str]]:
+    """从 schema.sql 解析出 {表名: 列名集合}，用于校验 spec 引用的表/列真实存在。"""
+    text = (ENV_DIR / "database" / "schema.sql").read_text(encoding="utf-8")
+    out: dict[str, set[str]] = {}
+    for m in _TABLE_RE.finditer(text):
+        table, body = m.group(1), m.group(2)
+        cols: set[str] = set()
+        for line in body.splitlines():
+            line = line.strip()
+            if not line or line.startswith("--"):
+                continue
+            head = line.split()[0].rstrip(",")
+            if not IDENT.match(head):
+                continue
+            if head.upper() == "PRIMARY" or head.upper() == "UNIQUE":
+                continue
+            cols.add(head)
+        out[table] = cols
+    return out
+
+
+SCHEMA_TABLES = parse_schema()
+
+
+def row_filter_fields(node, acc: set[str]) -> None:
+    if isinstance(node, dict):
+        f = node.get("field")
+        if isinstance(f, str):
+            acc.add(f)
+        for c in node.get("conditions") or []:
+            row_filter_fields(c, acc)
+
+
+def check_datascope_sources(tid: str, where: str, ds: dict) -> None:
+    """校验 DataScope 里的库、表、列、row_filter 字段在 schema.sql 中真实存在。"""
+    global db_scopes_checked
+    db, table = ds.get("database"), ds.get("table")
+    if db != "company":
+        err(tid, f"{where} database 必须是 'company'（当前只有这一套库），实际 {db!r}")
+    cols = SCHEMA_TABLES.get(table)
+    if cols is None:
+        err(tid, f"{where} 表不存在于 schema.sql：{table!r}（可选 {sorted(SCHEMA_TABLES)}）")
+        return
+    db_scopes_checked += 1
+    for name in ("read_columns", "output_columns"):
+        for c in ds.get(name) or []:
+            if isinstance(c, str) and c not in cols:
+                err(tid, f"{where} {name} 引用了 {table} 中不存在的列：{c!r}")
+    fields: set[str] = set()
+    row_filter_fields(ds.get("row_filter"), fields)
+    for f in sorted(fields - cols):
+        err(tid, f"{where} row_filter 引用了 {table} 中不存在的列：{f!r}")
+
 
 
 def check_filesystem_fingerprints(tid: str, block_name: str, block: dict) -> None:
@@ -209,8 +305,9 @@ def check_filesystem_fingerprints(tid: str, block_name: str, block: dict) -> Non
             err(tid, f"{block_name} 的 {rel} content_sha256 不符：spec={sha} 实际={actual}")
 
 
-def check_splits(spec_ids: set[str]) -> None:
+def check_splits(specs_by_id: dict[str, dict]) -> None:
     """核对 splits.csv / eval_units.csv 与 spec 集合一致（文件不存在时只提示一次）。"""
+    spec_ids = set(specs_by_id)
     splits_csv = BASE / "dataset" / "splits.csv"
     units_csv = BASE / "dataset" / "eval_units.csv"
     if not splits_csv.exists():
@@ -230,6 +327,15 @@ def check_splits(spec_ids: set[str]) -> None:
     for r in rows:
         if r["split"] not in {"smoke", "dev", "test"}:
             err("splits", f"{r['task_id']} split 非法：{r['split']}")
+        spec = specs_by_id.get(r["task_id"])
+        if not spec:
+            continue
+        # counted_in_v1 必须由 execution_supported 推出来，不能写死
+        expected = str(bool(spec.get("execution_supported", True))).lower()
+        if r.get("counted_in_v1", "").lower() != expected:
+            err("splits",
+                f"{r['task_id']} counted_in_v1={r.get('counted_in_v1')!r} 与 execution_supported "
+                f"({spec.get('execution_supported', True)}) 不一致，应为 {expected}")
 
     if not units_csv.exists():
         warn("units", "缺 dataset/eval_units.csv")
@@ -242,6 +348,20 @@ def check_splits(spec_ids: set[str]) -> None:
             err("units", f"{u['unit_id']} 的 injection_task 不存在：{u['injection_task']}")
         if u["split"] not in {"smoke", "dev", "test"}:
             err("units", f"{u['unit_id']} split 非法：{u['split']}")
+        kind = u.get("unit_kind", "")
+        if kind == "self_injection":
+            # 自含注入：注入就在用户任务自己的输入里，两个判定点必须分别给出期望动作
+            if u["user_task"] != u["injection_task"]:
+                err("units", f"{u['unit_id']} self_injection 的 user_task 与 injection_task 必须相同")
+            if not u.get("expected_action_injected"):
+                err("units", f"{u['unit_id']} self_injection 缺 expected_action_injected")
+        elif kind in {"clean", "injection"}:
+            if kind == "clean" and u["injection_task"] != "none":
+                err("units", f"{u['unit_id']} 标为 clean 但带 injection_task")
+            if kind == "injection" and u["injection_task"] == "none":
+                err("units", f"{u['unit_id']} 标为 injection 但没有 injection_task")
+        else:
+            err("units", f"{u['unit_id']} unit_kind 非法：{kind!r}")
 
 
 def main() -> int:
@@ -349,6 +469,20 @@ def main() -> int:
             err(tid, "injection_task 必须有 carrier")
         if spec.get("injection_scenario") and "injected_request" not in spec:
             err(tid, "injection_scenario=true 必须有 injected_request")
+        if spec.get("injection_scenario") and "carrier" not in spec:
+            err(tid, "injection_scenario=true 必须有 carrier（说明注入藏在哪、指纹是什么）")
+        carrier = spec.get("carrier")
+        if isinstance(carrier, dict):
+            loc = carrier.get("location")
+            # DB 载体写成 company.<table>.<column> 或 db:<table>.<column>，不按文件路径校验
+            is_db = isinstance(loc, str) and (loc.startswith("db:") or re.match(r"^company\.", loc))
+            if isinstance(loc, str) and not is_db:
+                check_fs_path(tid, "carrier.location", loc)
+            sha = carrier.get("content_sha256")
+            if sha and isinstance(loc, str) and not is_db:
+                target = FS_ROOT / loc
+                if target.exists() and file_sha16(target) != sha:
+                    err(tid, f"carrier 的 {loc} content_sha256 不符：spec={sha} 实际={file_sha16(target)}")
 
         cat = catalog_by_id.get(tid)
         if cat is None:
@@ -360,10 +494,16 @@ def main() -> int:
                 err(tid, f"catalog 与 spec 的 category 不一致：{cat['category']} vs {spec.get('category')}")
 
     # 3. splits / eval_units
-    check_splits({p.stem for p in specs})
+    specs_by_id = {}
+    for path in specs:
+        try:
+            specs_by_id[path.stem] = json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            pass
+    check_splits(specs_by_id)
 
     # 4. 汇总
-    print(f"catalog: {len(rows)} 行   specs: {len(specs)} 个   env_hash={expected_env}   fs_fingerprints_checked={fs_checked}")
+    print(f"catalog: {len(rows)} 行   specs: {len(specs)} 个   env_hash={expected_env}   fs_fingerprints_checked={fs_checked}   db_scopes_checked={db_scopes_checked}   paths_checked={paths_checked}")
     for w in warnings:
         print("WARN  " + w)
     for e in errors:

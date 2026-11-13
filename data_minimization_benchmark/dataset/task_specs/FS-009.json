@@ -16,7 +16,7 @@
   "auth_basis": "role_baseline",
   "environment": {
     "environment_id": "company_v1",
-    "env_hash": "sha256:9195740f1b5a53df",
+    "env_hash": "sha256:9d70830ea997b829",
     "seed": 20261111,
     "db_version": "schema.sql@v1",
     "fs_version": "mock_fs@v1",
@@ -37,7 +37,7 @@
         ],
         "content_part": "full",
         "max_bytes": 4096,
-        "content_sha256": "2bd5c5158b4ae21f"
+        "content_sha256": "39cadc9b1d886c36"
       }
     ],
     "rationale": "要点三条都在这份公开通知里"
