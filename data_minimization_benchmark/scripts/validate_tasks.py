@@ -50,6 +50,7 @@ COMPARE_OPS = {"lt", "lte", "gt", "gte"}
 SUPPORTED_OPS = set(ROWFILTER_KEYS)
 
 errors: list[str] = []
+fs_checked = 0
 warnings: list[str] = []
 
 
@@ -178,6 +179,71 @@ def env_hash_now() -> str:
     return "sha256:" + h.hexdigest()[:16]
 
 
+FS_ROOT = ENV_DIR / "filesystem"
+
+
+def file_sha16(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()[:16]
+
+
+def check_filesystem_fingerprints(tid: str, block_name: str, block: dict) -> None:
+    """核对 FS 任务里写的 content_sha256 与 environment/filesystem 下的真实文件一致。
+
+    只校验 READ 且写了 content_sha256 的路径；目录（以 / 结尾）不校验。
+    """
+    for item in (block.get("paths") or []):
+        if not isinstance(item, dict):
+            continue
+        rel = item.get("path") or ""
+        sha = item.get("content_sha256")
+        if not sha or rel.endswith("/"):
+            continue
+        target = FS_ROOT / rel
+        if not target.exists():
+            err(tid, f"{block_name} 路径不存在：{rel}（先跑 environment/reset.py）")
+            continue
+        actual = file_sha16(target)
+        global fs_checked
+        fs_checked += 1
+        if actual != sha:
+            err(tid, f"{block_name} 的 {rel} content_sha256 不符：spec={sha} 实际={actual}")
+
+
+def check_splits(spec_ids: set[str]) -> None:
+    """核对 splits.csv / eval_units.csv 与 spec 集合一致（文件不存在时只提示一次）。"""
+    splits_csv = BASE / "dataset" / "splits.csv"
+    units_csv = BASE / "dataset" / "eval_units.csv"
+    if not splits_csv.exists():
+        warn("splits", "缺 dataset/splits.csv（跑 scripts/build_splits.py 生成）")
+        return
+    rows = list(csv.DictReader(splits_csv.read_text(encoding="utf-8").splitlines()))
+    ids = [r["task_id"] for r in rows]
+    if len(ids) != len(set(ids)):
+        err("splits", "有任务被划进多个 split")
+    if set(ids) != spec_ids:
+        missing = sorted(spec_ids - set(ids))
+        extra = sorted(set(ids) - spec_ids)
+        if missing:
+            err("splits", f"未划入任何 split：{missing}")
+        if extra:
+            err("splits", f"splits.csv 含不存在的任务：{extra}")
+    for r in rows:
+        if r["split"] not in {"smoke", "dev", "test"}:
+            err("splits", f"{r['task_id']} split 非法：{r['split']}")
+
+    if not units_csv.exists():
+        warn("units", "缺 dataset/eval_units.csv")
+        return
+    units = list(csv.DictReader(units_csv.read_text(encoding="utf-8").splitlines()))
+    for u in units:
+        if u["user_task"] not in spec_ids:
+            err("units", f"{u['unit_id']} 的 user_task 不存在：{u['user_task']}")
+        if u["injection_task"] != "none" and u["injection_task"] not in spec_ids:
+            err("units", f"{u['unit_id']} 的 injection_task 不存在：{u['injection_task']}")
+        if u["split"] not in {"smoke", "dev", "test"}:
+            err("units", f"{u['unit_id']} split 非法：{u['split']}")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--check-env-hash", action="store_true")
@@ -262,6 +328,11 @@ def main() -> int:
         if "may_visit" in spec:
             check_scope_block(tid, "may_visit", spec.get("may_visit"))
 
+        check_filesystem_fingerprints(tid, "must_visit", spec.get("must_visit") or {})
+        check_filesystem_fingerprints(tid, "forbidden_scope", spec.get("forbidden_scope") or {})
+        if "may_visit" in spec:
+            check_filesystem_fingerprints(tid, "may_visit", spec.get("may_visit") or {})
+
         must_tc = table_column_sets(spec.get("must_visit") or {})
         for_tc = table_column_sets(spec.get("forbidden_scope") or {})
         for key, cols in must_tc.items():
@@ -288,8 +359,11 @@ def main() -> int:
             if cat["category"] != spec.get("category"):
                 err(tid, f"catalog 与 spec 的 category 不一致：{cat['category']} vs {spec.get('category')}")
 
-    # 3. 汇总
-    print(f"catalog: {len(rows)} 行   specs: {len(specs)} 个   env_hash={expected_env}")
+    # 3. splits / eval_units
+    check_splits({p.stem for p in specs})
+
+    # 4. 汇总
+    print(f"catalog: {len(rows)} 行   specs: {len(specs)} 个   env_hash={expected_env}   fs_fingerprints_checked={fs_checked}")
     for w in warnings:
         print("WARN  " + w)
     for e in errors:

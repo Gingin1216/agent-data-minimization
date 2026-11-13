@@ -12,18 +12,24 @@
 data_minimization_benchmark/
 ├─ dataset/
 │  ├─ task_catalog.csv          # 36 条任务总表
+│  ├─ splits.csv                # 任务 → smoke/dev/test 划分
+│  ├─ eval_units.csv            # 36 个评测单元（user_task × injection_task）
 │  └─ task_specs/               # 单任务完整规格（36 条全部已写）
 ├─ environment/
 │  ├─ database/                 # schema.sql + init_db.py → company.db
 │  ├─ reset.py                  # → filesystem/
 │  └─ filesystem/               # 生成物，不提交（public / work / sensitive / untrusted）
 ├─ annotation/
-│  └─ annotation_guideline.md   # 标注规范 v0.1
+│  ├─ annotation_guideline.md   # 标注规范 v0.3
+│  └─ disagreements.md          # 复核分歧记录模板
 ├─ docs/
 │  ├─ 02_environment_spec.md    # 环境规格（库表、文件树、注入载体）
-│  └─ 03_datascope_mapping.md   # 36 条任务的 DataScope 映射与缺口登记
+│  ├─ 03_datascope_mapping.md   # 36 条任务的 DataScope 映射与缺口登记
+│  ├─ 04_filescope_v0.1.md      # FileScope 暂定结构与计数口径（FS 折中方案）
+│  └─ 05_splits_and_eval_units.md  # 划分规则与评测单元口径
 └─ scripts/
-   └─ validate_tasks.py         # 结构 + DataScope 兼容性校验
+   ├─ validate_tasks.py         # 结构 + DataScope 兼容性 + FS 指纹 + 划分一致性校验
+   └─ build_splits.py           # 生成 splits.csv 与 eval_units.csv
 ```
 
 ## 2. 快速开始
@@ -43,12 +49,14 @@ python scripts\validate_tasks.py --check-env-hash
 | --- | --- | --- |
 | 任务总表 | 36（数据库 18 + 文件系统 18） | 已登记 |
 | 完整 TaskSpec | 36（数据库 18 + 文件系统 18） | 全部已写，待双人复核（36 条 `reviewer=pending`） |
+| 任务划分 | smoke 11 / dev 13 / test 12 | 已生成（test 每类 ≥2） |
+| 评测单元 | 36（clean 30 + injection 6） | 已生成（`eval_units.csv`） |
 | 模拟数据库 | 5 表 / 191 行 | 可用 |
 | 模拟文件系统 | 12 个文件 | 可用 |
-| 标注规范 | v0.1 | 可用 |
-| 校验脚本 | 1 个 | 0 error |
+| 标注规范 | v0.3 | 可用 |
+| 校验脚本 | 2 个（结构 + 划分） | 0 error，12 处 FS 内容指纹已核对 |
 
-4 条 pilot 的覆盖关系：
+4 条 pilot 的覆盖关系（其余 32 条见 `dataset/task_catalog.csv`）：
 
 | 任务 | 类别 | 考察点 |
 | --- | --- | --- |
@@ -62,22 +70,24 @@ python scripts\validate_tasks.py --check-env-hash
 | 对象 | 我方提供 | 需要对方提供 |
 | --- | --- | --- |
 | `DataScope`（3 号） | 每条任务的 `must_visit.datascope[]`，ASCII 标识符、单表 SELECT、RowFilter AST | `extract_requested_scope`、`check_data_scope`、`enforce_database_query`（拟议接口） |
+| `FileScope`（3 号，待确认） | 18 条 FS 任务的 `must_visit.paths[]`（`docs/04_filescope_v0.1.md`） | v1.1 是否接纳该结构 |
 | `PolicyRecord`（5 号） | 任务的禁止范围与期望动作 | DataScope 列表的存储与更新语义 |
-| `DecisionTrace`（2 号） | 判定所需的最小事实（请求范围、命中/未命中） | 统一字段与指标口径 |
+| `DecisionTrace`（2 号） | 判定所需的最小事实（请求范围、命中/未命中）+ `eval_units.csv` | 统一字段与指标口径 |
 | 策略校验（4 号） | 可判定的范围关系样本 | `PROVED/VIOLATED/UNKNOWN` 三态输出 |
 
 ## 5. 已知缺口
 
-1. FS 任务没有 DataScope 结构（v1.0 只覆盖数据库单表 SELECT），是否计入 v1 硬指标待组内确认。
+1. FS 任务的计数口径已用折中方案定下（36 条全部计入，`FileScope` 暂定），见 `docs/04_filescope_v0.1.md`；若 3 号不接纳则按该文 §5 回退为「18 核心 + 18 扩展」。
 2. 聚合 / JOIN / `SELECT *` 任务超出 v1.0 支持子集：DB-003 标 `execution_supported=false`，DB-009 作为「预期拒绝」保留；两者不进运行时硬指标。
-3. 载体 `content_sha256` 目前人工维护，校验脚本未核对。
+3. FS 侧 `content_sha256` 已由校验脚本自动核对（当前 12 处）；DB 侧三条注入载体（`EXP-031/052/068`）的 hash 仍是人工维护，尚未接入脚本。
 4. 运行时范围提取（SQL → RequestedScope）尚未实现，当前只能校验 spec 结构。
 
 详见 `docs/02_environment_spec.md` §5 与 `annotation/annotation_guideline.md` §11。
 
 ## 6. 下一步（对齐 `总指导.md` 的阶段计划）
 
-1. 双人复核 4 条 pilot，记录 κ 与分歧（`annotation/disagreements.md`）。
+1. 双人复核 36 条（注入 6 条全量 + 其余每类 ≥20%），记录 κ 与分歧（`annotation/disagreements.md`）。
 2. ~~按 catalog 补齐 36 条 TaskSpec~~（已完成，18 + 18）。
-3. 与 3 号联调 `company_db_query` / `mock_fs_*` 三个受限工具，把 spec 变成可跑的评测单元。
-4. 与 2 号确认指标口径（判定点计数、误报/漏报分母）后再冻结 v1。
+3. ~~任务划分与评测单元~~（已完成：`splits.csv` + `eval_units.csv`）。
+4. 与 3 号联调 `company_db_query` / `mock_fs_*` 三个受限工具，把 spec 变成可跑的评测单元。
+5. 与 2 号确认指标口径（判定点计数、误报/漏报分母）后再冻结 v1。
