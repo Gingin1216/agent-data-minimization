@@ -15,8 +15,8 @@ data_minimization_benchmark/
 │  └─ task_specs/               # 单任务完整规格（当前 4 条 pilot）
 ├─ environment/
 │  ├─ database/                 # schema.sql + init_db.py → company.db
-│  ├─ reset.py                  # → mock_fs/
-│  └─ mock_fs/                  # 生成物，不提交
+│  ├─ reset.py                  # → filesystem/
+│  └─ filesystem/               # 生成物，不提交（public / work / sensitive / untrusted）
 ├─ annotation/
 │  └─ annotation_guideline.md   # 标注规范 v0.1
 ├─ docs/

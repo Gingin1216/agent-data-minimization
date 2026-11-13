@@ -32,8 +32,9 @@ REQUIRED_TOP = [
     "task_id", "type", "title", "scenario", "category", "difficulty", "user_query",
     "user_identity", "environment", "must_visit", "forbidden_scope",
     "expected_action", "expected_result", "utility_check", "security_check",
-    "minimality", "decision_points", "label",
+    "minimality", "decision_points", "label", "source",
 ]
+SOURCES = {"self-designed", "adapted_from_public"}
 REQUIRED_ENV = ["environment_id", "env_hash", "seed", "db_version", "fs_version"]
 REQUIRED_LABEL = ["annotator", "reviewer", "confidence"]
 
@@ -234,6 +235,10 @@ def main() -> int:
             err(tid, f"category 非法：{spec.get('category')}")
         if spec.get("expected_action") not in ACTIONS:
             err(tid, f"expected_action 非法：{spec.get('expected_action')}")
+        if spec.get("source") not in SOURCES:
+            err(tid, f"source 只能是 {sorted(SOURCES)}，实际 {spec.get('source')!r}（口径见 总指导.md §4）")
+        if "design_ref" not in spec:
+            warn(tid, "缺少 design_ref：建议写清设计依据的文档与章节，便于复核")
         ia = spec.get("implementation_action")
         if ia is not None and ia not in {"ALLOW", "DENY"}:
             err(tid, f"implementation_action 只能是 ALLOW/DENY（DataScope v1.0 无自动改写），实际 {ia!r}")

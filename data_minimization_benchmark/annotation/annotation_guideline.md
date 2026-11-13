@@ -122,6 +122,12 @@
 | `docs/02_environment_spec.md` | 环境结构与 DataScope 映射 |
 | `scripts/validate_tasks.py` | 结构校验（0 error 才能提交） |
 
+**`source` 与 `design_ref` 的分工**（别混写）：
+
+- `source` 是**任务来源类型**，只允许两个值：`self-designed`（自建）、`adapted_from_public`（改造自公开任务）。口径见 `总指导.md` §4 字段表。
+- `design_ref` 是**设计依据的文档与章节**，用于复核时溯源，例如 `总指导.md §3.2 / §5.4`。写之前必须确认该章节真实存在；章节号对不上比不写更糟。
+- 章节号引用的是项目级文档（在 `labb\` 根目录，不在仓库内），复核人若拿不到，以 spec 自身内容为准：**`must_visit` / `forbidden_scope` / `expected_result` 是唯一可执行的判定依据，`design_ref` 只负责解释“为什么这么标”**。
+
 ## 11. 变更记录
 
 | 日期 | 版本 | 变更 | 原因 |

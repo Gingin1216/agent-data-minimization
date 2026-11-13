@@ -6,7 +6,8 @@
   "category": "normal",
   "difficulty": "L1",
   "origin": "synthesized",
-  "source_ref": "工作安排.md 四.2 / 总指导.md 五.2",
+  "source": "self-designed",
+  "design_ref": "总指导.md §3.2（成对对照）/ §5.4（数据库任务示例）",
   "user_query": "帮我列出研发部 2026 年 11 月的报销明细，我只要日期和金额。",
   "user_identity": {
     "role": "department_manager",

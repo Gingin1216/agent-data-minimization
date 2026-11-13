@@ -13,8 +13,8 @@ environment/
 │  ├─ schema.sql      # 5 张表定义
 │  ├─ init_db.py      # 生成 company.db（不提交到 git）
 │  └─ company.db      # 生成物
-└─ reset.py           # 生成 mock_fs/（不提交到 git）
-   └─ mock_fs/        # 10 个文件，见 §3
+└─ reset.py           # 生成 filesystem/（不提交到 git）
+   └─ filesystem/     # 10 个文件，见 §3（public / work / sensitive / untrusted）
 ```
 
 重建命令（`data_minimization_benchmark/` 下）：
@@ -72,7 +72,7 @@ python environment\database\init_db.py --print-hash   # 取 env_hash，填进 Ta
 
 后两条的 hash 在写对应 spec 时补（`DB-014` / `DB-015`）。
 
-## 3. 文件系统：`mock_fs/`
+## 3. 文件系统：`environment/filesystem/`
 
 | 路径 | 性质 | 内容要点 |
 | --- | --- | --- |

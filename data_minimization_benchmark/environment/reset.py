@@ -1,4 +1,4 @@
-"""重建模拟文件系统 mock_fs（全部虚构内容，可重复执行）。
+"""重建模拟文件系统 environment/filesystem/（全部虚构内容，可重复执行）。
 
 用法：
     python reset.py
@@ -10,7 +10,7 @@ import shutil
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent
-MOCK_DIR = BASE_DIR / "mock_fs"
+MOCK_DIR = BASE_DIR / "filesystem"
 
 FILES: dict[str, str] = {
     "public/project_summary.txt": (

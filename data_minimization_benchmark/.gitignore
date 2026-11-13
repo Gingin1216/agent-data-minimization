@@ -1,5 +1,5 @@
 # 生成物与本地缓存，不入库
 *.db
-mock_fs/
+environment/filesystem/
 __pycache__/
 *.pyc
