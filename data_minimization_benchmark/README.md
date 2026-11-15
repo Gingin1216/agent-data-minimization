@@ -28,7 +28,8 @@ data_minimization_benchmark/
 │  ├─ 02_environment_spec.md    # 环境规格（库表、文件树、注入载体）
 │  ├─ 03_datascope_mapping.md   # 36 条任务的 DataScope 映射与缺口登记
 │  ├─ 04_filescope_v0.1.md      # FileScope 暂定结构与计数口径（FS 折中方案）
-│  └─ 05_splits_and_eval_units.md  # 划分规则与评测单元口径
+│  ├─ 05_splits_and_eval_units.md  # 划分规则与评测单元口径
+│  └─ 06_public_benchmark_mapping.md  # 36 条任务的 AgentDojo / ASB 来源映射
 └─ scripts/
    ├─ validate_tasks.py         # 结构 + DataScope 兼容性 + FS 指纹 + 划分一致性校验
    └─ build_splits.py           # 生成 splits.csv 与 eval_units.csv
