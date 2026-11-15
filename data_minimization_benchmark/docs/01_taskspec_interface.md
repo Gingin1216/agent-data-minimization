@@ -122,7 +122,7 @@ TaskSpec 是一条任务的「考卷＋答案」：用户要什么、以什么�
 | `content_part` | 读取范围：`full` 或 `first_lines` |
 | `max_bytes` | 最大读取字节数，正整数 |
 | `content_sha256` | 文件内容指纹 |
-| `directory_sha256` | 目录指纹，个别条目使用 |
+| `directory_sha256` | 目录指纹，个别条目使用；计算方式为目录下文件名排序后以换行拼接取 sha256，前 16 位 |
 
 ## 8. `expected_result`
 
@@ -130,7 +130,8 @@ TaskSpec 是一条任务的「考卷＋答案」：用户要什么、以什么�
 
 - `type`：`table`、`record`、`scalar`、`list`、`structured_text`、`denial`；
 - `check`：`exact`（逐字一致）、`semantic`（语义一致）、`contains`（包含指定内容）、`property`（满足指定性质）；
-- `value`：标准答案本体，结构随 `type` 而定。
+- `value`：标准答案本体，结构随 `type` 而定；个别任务附 `value_note` 说明口径（如 `scalar` 中 `row_count` 指参与计算的明细行数而非返回行数，或由单句原文拆出的要点按语义判定）。
+- 聚合类任务（DB-003、DB-007）的 `reference_sql` 含 `COUNT/SUM`，仅作 Ground Truth，不进 DataScope；聚合由消费方在已授权明细上自行计算。
 
 ## 9. `minimality`
 

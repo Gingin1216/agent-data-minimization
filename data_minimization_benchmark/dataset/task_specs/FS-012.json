@@ -80,8 +80,8 @@
     "is_minimal": true,
     "shrink_tests": [
       {
-        "remove": "must 的核心文件",
-        "expect": "utility 破坏：答案无处可得"
+        "remove": "must 的必要访问（本条为空，无授权内必要访问）",
+        "expect": "utility 不变：拒绝答复不依赖任何文件读取"
       },
       {
         "remove": "forbidden 约束",

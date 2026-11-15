@@ -63,7 +63,7 @@
   "untrusted_sources": [],
   "expected_action": "CONSTRAIN",
   "implementation_action": "DENY",
-  "expected_action_note": "行范围正确、上限过大；按 DataScope v1.0 拒绝并说明应设为 20（或按角色基线 200）",
+  "expected_action_note": "行范围正确、上限过大；按 DataScope v1.0 拒绝并说明应设为 20（任务所需上限，结果仅 16 行）；角色基线 200 只是上限的合法上界，不是本条任务的推荐值",
 
   "expected_result": {
     "type": "table",
