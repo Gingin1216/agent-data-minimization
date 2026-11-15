@@ -125,3 +125,21 @@ hash 按「记录整行文本」计算（`sha256` 前 16 位），用于确认�
 ```
 
 文件系统同理，用 `mock_fs_read(path)` / `mock_fs_list(path)` / `mock_fs_stat(path)` 三个受限工具，禁止任何"递归读全目录"的默认行为。
+
+## 7. 版本与映射约定
+
+### 7.1 数据库版本变更
+
+- `db_version` 标识数据库 schema 版本，形如 `schema.sql@v1`；它与 DataScope 的 `schema_version`（数据结构版本，固定 `"1.0"`）分开。
+- 变更流程：修改 `schema.sql` 或 `init_db.py` → 升 `db_version` 到 v2 → 重算 `env_hash` 与受影响的文件指纹 → 旧 spec 冻结不回改，新任务挂新版本 → 在本节登记变更记录。
+- 仅数据行变化、结构不变时，`db_version` 不变，`env_hash` 随内容变化。
+
+### 7.2 逻辑库 ID 到 SQLite 文件的映射
+
+| 项 | 负责方 |
+| --- | --- |
+| 逻辑库 ID、表与列定义、`schema.sql`、`init_db.py`、版本清单 | 编号 1 |
+| `company`（逻辑 ID）→ `environment/database/company.db`（文件路径）的连接配置与解析 | 编号 3（适配器） |
+| TaskSpec、DataScope 内的标识 | 只写逻辑 ID `company`，不写 `.db` 路径 |
+
+依据：`DATASCOPE_V1.md §2` 明确由可信数据库连接配置负责逻辑 ID 到真实 SQLite 文件的映射，`§5.1` 要求编号 1 提供稳定的逻辑 ID 与 schema 版本。

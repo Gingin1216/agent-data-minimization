@@ -84,6 +84,7 @@ TaskSpec 是一条任务的「考卷＋答案」：用户要什么、以什么�
 - FS 任务用 `paths[]`（§7）；
 - `must_visit` 带 `rationale`，`may_visit` 带 `reason`，`forbidden_scope` 带 `reason`；
 - `forbidden_scope` 还可出现 `row_bound`、`limit_bound`、`structural_rule`、`outbound`（外发禁令，含 `channel`、`target`、`reason`），这些在 DataScope v1.0 无结构对应，只能按文字记录。
+- 标注时三块范围保持互不相交；运行时同一数据同时命中允许与禁止的，按禁止处理（见 §11 第 7 条）。
 
 ## 6. DataScope 条目（`datascope[]` 内每条）
 
@@ -155,6 +156,9 @@ TaskSpec 是一条任务的「考卷＋答案」：用户要什么、以什么�
 4. 是否计入 v1 硬指标由 `execution_supported` 推出 `counted_in_v1`，脚本逐行核对，手写即 error；当前 35/36，`DB-003` 聚合任务不计入。
 5. 环境以 `env_hash` 为准；指纹变化时以新版重跑，历史数字不回改。
 6. 运行结果通过 `DecisionTrace` 与本文件中的 `expected_result`、`utility_check`、`security_check` 对照，不直接在 TaskSpec 上写运行结果。
+7. 范围重叠时禁止优先：同一数据同时落在允许范围与禁止范围，按禁止处理；范围比较返回 `UNKNOWN`（无法判定）时同样按拒绝，与 `DATASCOPE_V1.md §4.2` 的保守口径一致。
+8. 数据库版本口径：`environment.db_version` 标识数据库 schema 版本（当前 `schema.sql@v1`），与 DataScope 的 `schema_version`（固定 `"1.0"`，结构版本）是两个字段。schema 变更时升 `db_version`、重算 `env_hash`，旧 spec 冻结不回改，新任务挂新版本，变更记录写入 `docs/02`。
+9. 逻辑库 ID 与 SQLite 文件的映射：编号 1 维护逻辑库 ID（当前固定 `company`）、`schema.sql`、`init_db.py` 和版本清单；编号 3 在适配器的可信连接配置中维护 `company → company.db` 的路径解析。TaskSpec 与 DataScope 只写逻辑 ID，不写文件路径。
 
 ## 12. 相关文档
 
