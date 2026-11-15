@@ -24,6 +24,7 @@ data_minimization_benchmark/
 │  ├─ annotation_guideline.md   # 标注规范 v0.3
 │  └─ disagreements.md          # 复核分歧记录模板
 ├─ docs/
+│  ├─ 01_taskspec_interface.md  # TaskSpec 接口说明（字段语义与消费方规则）
 │  ├─ 02_environment_spec.md    # 环境规格（库表、文件树、注入载体）
 │  ├─ 03_datascope_mapping.md   # 36 条任务的 DataScope 映射与缺口登记
 │  ├─ 04_filescope_v0.1.md      # FileScope 暂定结构与计数口径（FS 折中方案）
