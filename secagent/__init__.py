@@ -23,6 +23,7 @@ from .datascope_v1 import (
     TrueFilter,
 )
 from .sql_to_scope import SQLScopeError, SQLToScopeResult, sql_to_scope
+from .policy_record import PolicyRecord, PolicySession, ValidationIssue
 from .tool import (
     Tool,
     apply_secure_tool_wrapper,
@@ -45,6 +46,9 @@ __all__ = [
     "DataScope",
     "EqFilter",
     "InFilter",
+    "PolicyRecord",
+    "PolicySession",
+    "ValidationIssue",
     "RowFilter",
     "RowFilterError",
     "SQLScopeError",
