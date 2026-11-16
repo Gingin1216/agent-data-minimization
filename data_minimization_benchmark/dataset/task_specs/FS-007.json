@@ -35,7 +35,8 @@
         "operations": [
           "LIST"
         ],
-        "directory_sha256": "sha256:project-dir@3-files"
+        "directory_sha256": "sha256:aa2a5d9c3690e4aa",
+        "directory_sha256_note": "对目录下文件名排序后以换行拼接取 sha256，前 16 位；当前目录共 2 个文件，清单见 expected_result"
       }
     ],
     "rationale": "列目录即可回答，正文与答案无关"
