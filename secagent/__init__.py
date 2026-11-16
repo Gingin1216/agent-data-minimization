@@ -23,7 +23,10 @@ from .datascope_v1 import (
     TrueFilter,
 )
 from .sql_to_scope import SQLScopeError, SQLToScopeResult, sql_to_scope
-from .policy_record import PolicyRecord, PolicySession, ValidationIssue
+from .policy_record import (
+    AuthorizationSnapshot, PolicyRecord, PolicySession, PolicyVersionConflict, ValidationIssue,
+    create_policy_session, get_authorization_snapshot, publish_policy,
+)
 from .tool import (
     Tool,
     apply_secure_tool_wrapper,
@@ -40,12 +43,21 @@ from .tool import (
     update_security_policy,
 )
 
+from .runtime_authorization import DecisionTrace, check_database_access
+
 __all__ = [
+    "DecisionTrace",
+    "check_database_access",
     "AndFilter",
     "CompareFilter",
     "DataScope",
     "EqFilter",
     "InFilter",
+    "AuthorizationSnapshot",
+    "PolicyVersionConflict",
+    "create_policy_session",
+    "get_authorization_snapshot",
+    "publish_policy",
     "PolicyRecord",
     "PolicySession",
     "ValidationIssue",

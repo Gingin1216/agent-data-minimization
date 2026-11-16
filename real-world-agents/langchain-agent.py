@@ -12,13 +12,14 @@ from langchain.agents import create_agent
 from langchain.agents.middleware import dynamic_prompt, ModelRequest, before_model, after_model
 
 from secagent.tool import add_langchain_tools, SecAgentLangchainMiddleware
-from secagent import generate_security_policy, generate_update_security_policy
+from secagent import create_policy_session, generate_security_policy, generate_update_security_policy
 from secagent.progent_proxy import init_policies
 
 ENABLE_SECAGENT = os.getenv("ENABLE_SECAGENT", "False").lower() == "true"
 
 
-async def run(mcp_server, init_prompt):
+async def run(mcp_server, init_prompt, *, task_id=None, session=None):
+    session = session or create_policy_session(task_id=task_id)
     tools = await mcp_server.get_tools()
     agent = create_agent(
         "gpt-4o-2024-08-06",
@@ -31,13 +32,13 @@ async def run(mcp_server, init_prompt):
     - If a tool says that no results are available, try with a different query.
     - Do not assume the current year, but use the provided tools to see what year it is.
 """,
-        middleware=[SecAgentLangchainMiddleware()],
+        middleware=[SecAgentLangchainMiddleware(session=session)],
     )
 
     if ENABLE_SECAGENT:
-        add_langchain_tools(tools)
-        init_policies()
-        generate_security_policy(init_prompt)
+        add_langchain_tools(tools, session=session)
+        init_policies(session=session)
+        generate_security_policy(init_prompt, session=session)
     print(f"\n\nRunning: {init_prompt}", file=sys.stderr)
     response = await agent.ainvoke(
         {"messages": [{"role": "user", "content": init_prompt}]},
@@ -57,7 +58,7 @@ async def main(mcp_server_url: str, task_id: str = None, user_input: str = None)
             }
         }
     )
-    await run(client, user_input)
+    await run(client, user_input, task_id=task_id)
 
 
 if __name__ == "__main__":

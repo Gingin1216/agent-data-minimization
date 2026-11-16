@@ -11,13 +11,14 @@ from agents.mcp import MCPServer, MCPServerStreamableHttp
 from agents.model_settings import ModelSettings
 
 from secagent.tool import openai_agent_wrapper
-from secagent import generate_security_policy, generate_update_security_policy
+from secagent import create_policy_session, generate_security_policy, generate_update_security_policy
 from secagent.progent_proxy import init_policies
 
 ENABLE_SECAGENT = os.getenv("ENABLE_SECAGENT", "False").lower() == "true"
 
 
-async def run(mcp_server: MCPServer, init_prompt):
+async def run(mcp_server: MCPServer, init_prompt, *, task_id=None, session=None):
+    session = session or create_policy_session(task_id=task_id)
     agent = Agent(
         name="Assistant",
         model="gpt-4o-2024-08-06",
@@ -33,13 +34,13 @@ async def run(mcp_server: MCPServer, init_prompt):
         model_settings=ModelSettings(temperature=0.0),
     )
     # print(agent)
-    agent = openai_agent_wrapper(agent)
+    agent = openai_agent_wrapper(agent, session=session)
     # print(agent)
 
     if ENABLE_SECAGENT:
         await agent.get_all_tools("")  # Preload tools to gather info for security policy
-        init_policies()
-        generate_security_policy(init_prompt)
+        init_policies(session=session)
+        generate_security_policy(init_prompt, session=session)
     print(f"\n\nRunning: {init_prompt}", file=sys.stderr)
     result = Runner.run_streamed(starting_agent=agent, input=init_prompt, max_turns=100)
     last_tool_call = None
@@ -52,7 +53,7 @@ async def run(mcp_server: MCPServer, init_prompt):
                 # print(event.item.output, flush=True)
                 flag = os.getenv('SECAGENT_UPDATE', "True").lower() == "true"
                 if flag:
-                    generate_update_security_policy([last_tool_call], str(event.item.output), manual_check=False)
+                    generate_update_security_policy([last_tool_call], str(event.item.output), manual_check=False, session=session)
     print(result.final_output)
 
 
@@ -64,7 +65,7 @@ async def main(mcp_server_url: str, task_id: str = None, user_input: str = None)
             "headers": {"task_id": task_id}
         },
     ) as server:
-        await run(server, user_input)
+        await run(server, user_input, task_id=task_id)
 
 
 if __name__ == "__main__":

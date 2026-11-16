@@ -1,4 +1,4 @@
-﻿import json
+import json
 from pathlib import Path
 from unittest.mock import patch
 
@@ -28,7 +28,8 @@ def test_malformed_candidate_preserves_existing_policy():
     assert tool.get_current_config(session=session) == OLD_RULES
     assert session.user_query == "Old task"
     assert session.policy_version == version
-    assert [record.validation_status for record in session.records] == ["rejected"] * 3
+    attempts = [record for record in session.records if record.source == "initial_generation"]
+    assert [record.validation_status for record in attempts] == ["rejected"] * 3
     record = json.loads(json.dumps(session.records[-1].to_dict()))
     assert record["policy_version"] == version
     assert record["model_candidate"][1] == {"name": "list"}

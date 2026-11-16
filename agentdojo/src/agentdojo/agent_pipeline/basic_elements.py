@@ -4,7 +4,8 @@ from collections.abc import Sequence
 from agentdojo.agent_pipeline.base_pipeline_element import BasePipelineElement
 from agentdojo.functions_runtime import EmptyEnv, Env, FunctionsRuntime
 from agentdojo.types import ChatMessage, ChatSystemMessage, ChatUserMessage
-from secagent import generate_security_policy, update_security_policy
+from secagent import generate_security_policy
+from secagent.tool import current_policy_session
 
 
 class InitQuery(BasePipelineElement):
@@ -22,7 +23,7 @@ class InitQuery(BasePipelineElement):
         if len(messages) > 2 or (len(messages) == 1 and messages[0]["role"] != "system"):
             warnings.warn("The query is not being added as the first message or after the system message")
         query_message = ChatUserMessage(role="user", content=query)
-        generate_security_policy(query)
+        generate_security_policy(query, session=current_policy_session())
         messages = [*messages, query_message]
         return query, runtime, env, messages, extra_args
 

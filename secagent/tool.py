@@ -10,11 +10,16 @@ from docstring_parser import parse
 import json
 from jsonschema import validate
 from .utils import extract_json
-from .policy_record import PolicyRecord, PolicySession, ValidationIssue
+from .policy_record import (
+    AuthorizationSnapshot, PolicyRecord, PolicySession, PolicyVersionConflict, ValidationIssue,
+    get_authorization_snapshot, publish_policy,
+)
 from .policy_type_check import security_policy_type_check as validate_policy_types
 from .policy_analysis import security_policy_subset_check
 import os
 import copy
+from contextlib import contextmanager
+from contextvars import ContextVar
 
 LANGCHAIN_AVAILABLE = True
 try:
@@ -28,6 +33,33 @@ except:
     OPENAISDK_AVAILABLE = False
 
 _DEFAULT_SESSION = PolicySession()
+
+_ACTIVE_SESSION = ContextVar("secagent_policy_session", default=None)
+
+
+def current_policy_session() -> PolicySession:
+    return _ACTIVE_SESSION.get() or _DEFAULT_SESSION
+
+
+@contextmanager
+def policy_run(session=None, *, task_id=None):
+    """Bind pre-registered legacy tools to an isolated task run."""
+    if session is None and _ACTIVE_SESSION.get() is not None:
+        yield current_policy_session()
+        return
+    if session is None:
+        baseline = get_authorization_snapshot(_DEFAULT_SESSION)
+        session = PolicySession(task_id=task_id, available_tools=get_available_tools(session=_DEFAULT_SESSION))
+        if baseline.effective_rules is not None:
+            publish_policy(session, _retained_rules(baseline.effective_rules))
+    if not session.available_tools:
+        update_available_tools(get_available_tools(session=_DEFAULT_SESSION), session=session)
+    token = _ACTIVE_SESSION.set(session)
+    try:
+        yield session
+    finally:
+        _ACTIVE_SESSION.reset(token)
+
 
 # policy_model = "gpt-4o-2024-08-06"
 # policy_model = "o3-mini-2025-01-31"
@@ -58,62 +90,38 @@ def get_available_tools(*, session: PolicySession = _DEFAULT_SESSION) -> List[To
     return copy.deepcopy(session.available_tools)
 
 
-def sort_policy(*, session: PolicySession = _DEFAULT_SESSION) -> None:
-    if session.security_policy is None:
-        return
-    for tool, policies in session.security_policy.items():
-        session.security_policy[tool] = sorted(policies, key=lambda x: (x[0], -x[1]))
+def _add_manual_rules(tools, effect, session):
+    snapshot = get_authorization_snapshot(session)
+    policy = snapshot.effective_rules or {}
+    for name in set(tools):
+        policy.setdefault(name, []).insert(0, (1, effect, {}, 0))
+    publish_policy(session, policy, expected_version=snapshot.policy_version)
 
 
-def update_always_allowed_tools(tools, allow_all_no_arg_tools: bool = False, *, session: PolicySession = _DEFAULT_SESSION) -> None:
-    if session.security_policy is None:
-        session.security_policy = {}
-    always_allowed_tools = set(tools)
+def update_always_allowed_tools(
+    tools, allow_all_no_arg_tools: bool = False, *, session: PolicySession = _DEFAULT_SESSION
+) -> None:
+    names = set(tools)
     if allow_all_no_arg_tools:
-        always_allowed_tools.update([tool["name"] for tool in session.available_tools if len(tool["args"]) == 0])
-    for tool in always_allowed_tools:
-        if tool not in session.security_policy:
-            session.security_policy[tool] = [(1, 0, {}, 0)]
-        else:
-            session.security_policy[tool].insert(0, (1, 0, {}, 0))
-    session.policy_version += 1
-    sort_policy(session=session)
-    print(f"always allowed tools updated: {always_allowed_tools}", file=sys.stderr)
+        names.update(tool["name"] for tool in session.available_tools if not tool["args"])
+    _add_manual_rules(names, 0, session)
 
 
 def update_always_blocked_tools(tools, *, session: PolicySession = _DEFAULT_SESSION) -> None:
-    if session.security_policy is None:
-        session.security_policy = {}
-    always_blocked_tools = set(tools)
-    for tool in always_blocked_tools:
-        if tool not in session.security_policy:
-            session.security_policy[tool] = [(1, 1, {}, 0)]
-        else:
-            session.security_policy[tool].insert(0, (1, 1, {}, 0))
-    session.policy_version += 1
-    sort_policy(session=session)
-    print(f"always blocked tools updated: {always_blocked_tools}", file=sys.stderr)
+    _add_manual_rules(tools, 1, session)
 
 
 def get_allowed_tools(*, session: PolicySession = _DEFAULT_SESSION) -> List[Tool]:
-    ans = []
-    for tool in session.available_tools:
-        if session.security_policy is not None and tool["name"] in session.security_policy:
-            ans.append(tool)
-    return copy.deepcopy(ans)
+    rules = get_current_config(session=session) or {}
+    return [tool for tool in get_available_tools(session=session) if tool["name"] in rules]
 
 
 def get_current_config(*, session: PolicySession = _DEFAULT_SESSION) -> Dict:
-    return copy.deepcopy(session.security_policy)
+    return get_authorization_snapshot(session).effective_rules
 
 
 def update_security_policy(policy: dict, *, session: PolicySession = _DEFAULT_SESSION) -> None:
-    prepared = copy.deepcopy(policy)
-    for name, rules in prepared.items():
-        prepared[name] = sorted(rules, key=lambda rule: (rule[0], -rule[1]))
-    session.security_policy = prepared
-    session.policy_version += 1
-    print(f"security policy updated: {prepared}", file=sys.stderr)
+    publish_policy(session, policy)
 
 
 def security_policy_type_check(*, session: PolicySession = _DEFAULT_SESSION) -> None:
@@ -127,34 +135,35 @@ def security_policy_type_check(*, session: PolicySession = _DEFAULT_SESSION) -> 
     # check()
 
 
+def _generated_rules(policy):
+    return [
+        {"name": tool, "args": args}
+        for tool, rules in (policy or {}).items()
+        for priority, _effect, args, _fallback in rules
+        if priority == 100
+    ]
+
+
 def get_generated_policy(*, session: PolicySession = _DEFAULT_SESSION) -> List:
-    generated_policy = []
-    if session.security_policy is None:
-        return generated_policy
-    for tool, policies in session.security_policy.items():
-        for priority, _effect, policy, _fallback in policies:
-            if priority == 100:
-                generated_policy.append({"name": tool, "args": policy})
-    return copy.deepcopy(generated_policy)
+    return _generated_rules(get_current_config(session=session))
 
 
 def delete_generated_policy(*, session: PolicySession = _DEFAULT_SESSION) -> None:
-    if session.security_policy is not None:
-        retained = _retained_rules(session.security_policy)
-        if retained != session.security_policy:
-            session.security_policy = retained
-            session.policy_version += 1
+    snapshot = get_authorization_snapshot(session)
+    retained = _retained_rules(snapshot.effective_rules)
+    if snapshot.effective_rules is not None and retained != snapshot.effective_rules:
+        publish_policy(session, retained, expected_version=snapshot.policy_version, source="reset")
 
 
 def reset_security_policy(include_human_policy=False, *, session: PolicySession = _DEFAULT_SESSION) -> None:
     if include_human_policy:
-        if session.security_policy is not None:
-            session.security_policy = None
-            session.policy_version += 1
-        session.user_query = None
+        snapshot = get_authorization_snapshot(session)
+        publish_policy(
+            session, None, expected_version=snapshot.policy_version,
+            authorized_data_scopes=(), source="reset", clear_query=True,
+        )
     else:
         delete_generated_policy(session=session)
-    print("security policy reset", file=sys.stderr)
 
 
 total_completion_tokens = 0
@@ -416,10 +425,12 @@ def _validate_model_candidate(candidate, tools):
 
 
 def _record_policy_attempt(session, candidate, source, status, issues=()):
+    snapshot = get_authorization_snapshot(session)
     session.records.append(PolicyRecord(
-        session_id=session.session_id,
-        policy_version=session.policy_version,
-        effective_rules=get_current_config(session=session),
+        session_id=snapshot.session_id,
+        policy_version=snapshot.policy_version,
+        effective_rules=snapshot.effective_rules,
+        data_scopes=snapshot.authorized_data_scopes,
         model_candidate=copy.deepcopy(candidate),
         source=source,
         validation_status=status,
@@ -437,6 +448,7 @@ def generate_security_policy(
         print("SECAGENT_GENERATE is set to False, skip generating security policy.", file=sys.stderr)
         return
 
+    baseline = get_authorization_snapshot(session)
     tools = get_available_tools(session=session)
     tools_by_name = {tool["name"]: tool["args"] for tool in tools}
     content = "TOOLS: " + json.dumps(tools) + "\nUSER_QUERY: " + query
@@ -470,12 +482,20 @@ def generate_security_policy(
                 print("The generated security policy is discarded.", file=sys.stderr)
                 return
 
-        new_policy = _retained_rules(session.security_policy)
+        new_policy = _retained_rules(baseline.effective_rules)
         for rule in candidate:
             new_policy.setdefault(rule["name"], []).append((100, 0, rule["args"], 0))
-        update_security_policy(new_policy, session=session)
-        session.user_query = query
-        _record_policy_attempt(session, candidate, "initial_generation", "accepted")
+        try:
+            publish_policy(
+                session, new_policy, expected_version=baseline.policy_version, source="initial_generation",
+                candidate=candidate, status="accepted", model=policy_model, user_query=query,
+            )
+        except PolicyVersionConflict as error:
+            _record_policy_attempt(
+                session, candidate, "initial_generation", "rejected",
+                [ValidationIssue("$", "stale_policy_version", str(error))],
+            )
+            raise
         return
 
     raise ValueError("Initial policy rejected after 3 attempts: " + json.dumps(feedback))
@@ -505,12 +525,13 @@ def generate_update_security_policy(tool_call_param, tool_call_result, manual_ch
     if not generate_policy:
         print("SECAGENT_GENERATE is set to False, skip generating security policy.", file=sys.stderr)
         return
+    baseline = get_authorization_snapshot(session)
     if not decide_whether_to_update(tool_call_param, session=session):
         return
     counter = 0
     temperature = 0.0
     query = session.user_query or ""
-    current_policy = get_generated_policy(session=session)
+    current_policy = _generated_rules(baseline.effective_rules)
     content = "TOOLS: "+json.dumps(get_available_tools(session=session))+"\nUSER_QUERY: "+query+"\nTOOL_CALL_PARAM: "+json.dumps(tool_call_param) + \
         "\nTOOL_CALL_RESULT: "+tool_call_result+"\nCURRENT_RESTRICTIONS: "+json.dumps(current_policy)
     while True:
@@ -523,25 +544,41 @@ def generate_update_security_policy(tool_call_param, tool_call_result, manual_ch
                 generated_policy = extract_json(res)
             if generated_policy is None:
                 return
+            tools_by_name = {tool["name"]: tool["args"] for tool in get_available_tools(session=session)}
+            issues = _validate_model_candidate(generated_policy, tools_by_name)
+            if issues:
+                _record_policy_attempt(session, generated_policy, "dynamic_update", "rejected", issues)
+                return
             if manual_check:
                 print(f"The generated security policy is: {generated_policy}.\nDo you want to apply it?[y/N]", file=sys.stderr, end='', flush=True)
                 if input().strip().lower() != "y":
                     print("The generated security policy is discarded.", file=sys.stderr)
                     return
-            new_policy = _retained_rules(session.security_policy)
+            new_policy = _retained_rules(baseline.effective_rules)
             for allowed_tool in generated_policy:
                 new_policy.setdefault(allowed_tool["name"], []).append(
                     (100, 0, allowed_tool["args"], 0)
                 )
             only_allow_narrow = os.getenv("SECAGENT_ONLY_ALLOW_NARROW", "False").lower() == "true"
             if only_allow_narrow:
-                if not security_policy_subset_check(session.security_policy or {}, new_policy):
-                    print("The generated security policy is not a subset of the previous policy, discard it.", file=sys.stderr)
+                if not security_policy_subset_check(baseline.effective_rules or {}, new_policy):
+                    _record_policy_attempt(
+                        session, generated_policy, "dynamic_update", "rejected",
+                        [ValidationIssue("$", "policy_not_subset", "The update would exceed the baseline policy.")],
+                    )
                     return
-            update_security_policy(new_policy, session=session)
             status = "subset_checked" if only_allow_narrow else "unverified"
-            _record_policy_attempt(session, generated_policy, "dynamic_update", status)
+            publish_policy(
+                session, new_policy, expected_version=baseline.policy_version, source="dynamic_update",
+                candidate=generated_policy, status=status, model=policy_model,
+            )
             return
+        except PolicyVersionConflict as error:
+            _record_policy_attempt(
+                session, generated_policy, "dynamic_update", "rejected",
+                [ValidationIssue("$", "stale_policy_version", str(error))],
+            )
+            raise
         except Exception as e:
             counter += 1
             temperature += 0.2
@@ -622,34 +659,40 @@ def _check_tool_call(tool_name, kwargs, policies):
     return need_update_policies
 
 
-def check_tool_call(tool_name, kwargs, *, session: PolicySession = _DEFAULT_SESSION) -> None:
-    if session.security_policy is None:
+def check_tool_call(
+    tool_name, kwargs, *, session: PolicySession = _DEFAULT_SESSION,
+    snapshot: AuthorizationSnapshot = None,
+) -> None:
+    if snapshot is None:
+        snapshot = get_authorization_snapshot(session)
+    elif snapshot.session_id != session.session_id:
+        raise ValidationError("The authorization snapshot belongs to a different session.")
+    policy = snapshot.effective_rules
+    if policy is None:
         print("Warning: security policy is not set.", file=sys.stderr)
         return
     try:
-        policies = session.security_policy.get(tool_name, None)
-        if policies is None or len(policies) == 0:
+        policies = policy.get(tool_name)
+        if not policies:
             raise ValidationError(f"The tool '{tool_name}' is not allowed.")
-        if len(policies) == 0:
-            return
-        need_update_policies = _check_tool_call(tool_name, kwargs, policies)
-        if need_update_policies:
-            for tool, policies in need_update_policies.items():
-                session.security_policy[tool] = policies
-            session.policy_version += 1
-            sort_policy(session=session)
+        changes = _check_tool_call(tool_name, kwargs, policies)
+        if changes:
+            publish_policy(
+                session, {**policy, **changes},
+                expected_version=snapshot.policy_version, source="tool_call",
+            )
     except Exception as e:
-        raise ValidationError(f"{e}. Please try other tools or arguments and continue to finish the user task: {session.user_query}.")
+        raise ValidationError(f"{e}. Please try other tools or arguments and continue to finish the user task: {session.user_query}.") from e
 
 
 if LANGCHAIN_AVAILABLE:  # tested on langchain==1.0.2 langchain-core==1.0.1 langchain-mcp-adapters==0.1.12
-    def add_langchain_tools(tools):
+    def add_langchain_tools(tools, *, session=_DEFAULT_SESSION):
         for tool in tools:
             args = copy.deepcopy(tool.args)
             for arg, value in tool.args.items():
                 if "$ref" in value:
                     args.pop(arg)
-            _DEFAULT_SESSION.available_tools.append(Tool(
+            session.available_tools.append(Tool(
                 name=tool.name,
                 description=tool.description,
                 args=args,
@@ -659,21 +702,24 @@ if LANGCHAIN_AVAILABLE:  # tested on langchain==1.0.2 langchain-core==1.0.1 lang
     from langchain_core.messages import ToolMessage
 
     class SecAgentLangchainMiddleware(AgentMiddleware):
+        def __init__(self, *, session=_DEFAULT_SESSION):
+            self.session = session
+
         async def awrap_tool_call(
             self,
             request,
             handler,
         ):
             try:
-                check_tool_call(request.tool_call['name'], request.tool_call['args'])
+                check_tool_call(request.tool_call['name'], request.tool_call['args'], session=self.session)
                 result = await handler(request)
                 if enable_secagent:
                     flag = os.getenv('SECAGENT_UPDATE', "True").lower() == "true"
                     if flag:
                         generate_update_security_policy(
                             [{"name": request.tool_call['name'], "args": request.tool_call['args']}],
-                            result.content,
-                            manual_check=False
+                            str(result.content),
+                            manual_check=False, session=self.session
                         )
                 return result
             except Exception as e:
@@ -684,7 +730,7 @@ if LANGCHAIN_AVAILABLE:  # tested on langchain==1.0.2 langchain-core==1.0.1 lang
 
 
 if OPENAISDK_AVAILABLE:  # tested on openai-agents==0.4.2
-    def openai_tool_wrapper(func, tool_name):
+    def openai_tool_wrapper(func, tool_name, *, session=_DEFAULT_SESSION):
         @wraps(func)
         def wrapper(*args, **kwargs):
             try:
@@ -695,7 +741,7 @@ if OPENAISDK_AVAILABLE:  # tested on openai-agents==0.4.2
                     f"Invalid JSON input for tool {tool_name}: {input}"
                 ) from e
             try:
-                check_tool_call(tool_name, json_data)
+                check_tool_call(tool_name, json_data, session=session)
             except Exception as e:
                 error_msg = f"An error occurred while running the tool. Please try again. Error: {str(e)}"
 
@@ -705,48 +751,34 @@ if OPENAISDK_AVAILABLE:  # tested on openai-agents==0.4.2
             return func(*args, **kwargs)
         return wrapper
 
-    def openai_agent_wrapper(agent_cls):
+    def openai_agent_wrapper(agent_cls, *, session=_DEFAULT_SESSION):
+        from dataclasses import replace
         from agents.mcp import MCPUtil
         from agents.tool import FunctionTool
 
         original = getattr(agent_cls, "get_mcp_tools", None)
 
+        def bind_tool(tool):
+            if not isinstance(tool, FunctionTool):
+                return tool
+            args = {
+                name: copy.deepcopy(value)
+                for name, value in tool.params_json_schema.get("properties", {}).items()
+                if "$ref" not in value
+            }
+            if not any(entry["name"] == tool.name for entry in session.available_tools):
+                session.available_tools.append(Tool(name=tool.name, description=tool.description, args=args))
+            return replace(
+                tool, on_invoke_tool=openai_tool_wrapper(tool.on_invoke_tool, tool.name, session=session)
+            )
+
         @wraps(original)
         async def get_mcp_tools(self, run_context):
-            """Fetches the available tools from the MCP servers."""
-            convert_schemas_to_strict = self.mcp_config.get("convert_schemas_to_strict", False)
-            tool_list = await MCPUtil.get_all_function_tools(
-                self.mcp_servers, convert_schemas_to_strict, run_context, self
-            )
-            for tool in tool_list:
-                if isinstance(tool, FunctionTool):
-                    tool.on_invoke_tool = openai_tool_wrapper(tool.on_invoke_tool, tool.name)
-                    args = copy.deepcopy(tool.params_json_schema["properties"])
-                    for arg, value in tool.params_json_schema["properties"].items():
-                        if "$ref" in value:
-                            args.pop(arg)
-                    _DEFAULT_SESSION.available_tools.append(Tool(
-                        name=tool.name,
-                        description=tool.description,
-                        args=args,
-                    ))
-            return tool_list
+            strict = self.mcp_config.get("convert_schemas_to_strict", False)
+            tool_list = await MCPUtil.get_all_function_tools(self.mcp_servers, strict, run_context, self)
+            return [bind_tool(tool) for tool in tool_list]
 
-        tools = []
-        for tool in agent_cls.tools:
-            if isinstance(tool, FunctionTool):
-                tool.on_invoke_tool = openai_tool_wrapper(tool.on_invoke_tool, tool.name)
-                args = copy.deepcopy(tool.params_json_schema["properties"])
-                for arg, value in tool.params_json_schema["properties"].items():
-                    if "$ref" in value:
-                        args.pop(arg)
-                _DEFAULT_SESSION.available_tools.append(Tool(
-                    name=tool.name,
-                    description=tool.description,
-                    args=args,
-                ))
-            tools.append(tool)
-        agent_cls.tools = tools
+        agent_cls.tools = [bind_tool(tool) for tool in agent_cls.tools]
         agent_cls.get_mcp_tools = types.MethodType(get_mcp_tools, agent_cls)
 
         return agent_cls
@@ -806,7 +838,8 @@ def secure_tool_wrapper(tool: Any, *, session: PolicySession = _DEFAULT_SESSION)
         sig = inspect.signature(tool)
         bound_args = sig.bind(*args, **kwargs)
         bound_args.apply_defaults()
-        check_tool_call(tool.__name__, bound_args.arguments, session=session)
+        active = current_policy_session() if session is _DEFAULT_SESSION else session
+        check_tool_call(tool.__name__, bound_args.arguments, session=active)
         return tool(*args, **kwargs)
     return wrapper
 
