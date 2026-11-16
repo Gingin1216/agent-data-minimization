@@ -10,6 +10,8 @@ from docstring_parser import parse
 import json
 from jsonschema import validate
 from .utils import extract_json
+from .policy_record import PolicyRecord, PolicySession, ValidationIssue
+from .policy_type_check import security_policy_type_check as validate_policy_types
 from .policy_analysis import security_policy_subset_check
 import os
 import copy
@@ -25,11 +27,7 @@ try:
 except:
     OPENAISDK_AVAILABLE = False
 
-available_tools = []
-# always_blocked_tools = set()
-# always_allowed_tools = set()
-security_policy = None  # {"tool_name": [(priority, effect (0: allow; 1: forbid), condition, fallback (0: return msg; 1: terminate; 2: user confirm))]}
-init_user_query = None
+_DEFAULT_SESSION = PolicySession()
 
 # policy_model = "gpt-4o-2024-08-06"
 # policy_model = "o3-mini-2025-01-31"
@@ -51,112 +49,111 @@ class Tool(TypedDict):
     args: Dict
 
 
-def update_available_tools(tools: List[Tool]) -> None:
-    global available_tools
-    available_tools = tools
-    print(f"available tools updated: {available_tools}", file=sys.stderr)
+def update_available_tools(tools: List[Tool], *, session: PolicySession = _DEFAULT_SESSION) -> None:
+    session.available_tools = copy.deepcopy(tools)
+    print(f"available tools updated: {session.available_tools}", file=sys.stderr)
 
 
-def get_available_tools() -> List[Tool]:
-    return available_tools
+def get_available_tools(*, session: PolicySession = _DEFAULT_SESSION) -> List[Tool]:
+    return copy.deepcopy(session.available_tools)
 
 
-def sort_policy() -> None:
-    global security_policy
-    if security_policy is None:
+def sort_policy(*, session: PolicySession = _DEFAULT_SESSION) -> None:
+    if session.security_policy is None:
         return
-    for tool, policies in security_policy.items():
-        security_policy[tool] = sorted(policies, key=lambda x: (x[0], -x[1]))
+    for tool, policies in session.security_policy.items():
+        session.security_policy[tool] = sorted(policies, key=lambda x: (x[0], -x[1]))
 
 
-def update_always_allowed_tools(tools, allow_all_no_arg_tools: bool = False) -> None:
-    global security_policy
-    if security_policy is None:
-        security_policy = {}
+def update_always_allowed_tools(tools, allow_all_no_arg_tools: bool = False, *, session: PolicySession = _DEFAULT_SESSION) -> None:
+    if session.security_policy is None:
+        session.security_policy = {}
     always_allowed_tools = set(tools)
     if allow_all_no_arg_tools:
-        always_allowed_tools.update([tool["name"] for tool in available_tools if len(tool["args"]) == 0])
+        always_allowed_tools.update([tool["name"] for tool in session.available_tools if len(tool["args"]) == 0])
     for tool in always_allowed_tools:
-        if tool not in security_policy:
-            security_policy[tool] = [(1, 0, {}, 0)]
+        if tool not in session.security_policy:
+            session.security_policy[tool] = [(1, 0, {}, 0)]
         else:
-            security_policy[tool].insert(0, (1, 0, {}, 0))
-    sort_policy()
+            session.security_policy[tool].insert(0, (1, 0, {}, 0))
+    session.policy_version += 1
+    sort_policy(session=session)
     print(f"always allowed tools updated: {always_allowed_tools}", file=sys.stderr)
 
 
-def update_always_blocked_tools(tools) -> None:
-    global security_policy
-    if security_policy is None:
-        security_policy = {}
+def update_always_blocked_tools(tools, *, session: PolicySession = _DEFAULT_SESSION) -> None:
+    if session.security_policy is None:
+        session.security_policy = {}
     always_blocked_tools = set(tools)
     for tool in always_blocked_tools:
-        if tool not in security_policy:
-            security_policy[tool] = [(1, 1, {}, 0)]
+        if tool not in session.security_policy:
+            session.security_policy[tool] = [(1, 1, {}, 0)]
         else:
-            security_policy[tool].insert(0, (1, 1, {}, 0))
-    sort_policy()
+            session.security_policy[tool].insert(0, (1, 1, {}, 0))
+    session.policy_version += 1
+    sort_policy(session=session)
     print(f"always blocked tools updated: {always_blocked_tools}", file=sys.stderr)
 
 
-def get_allowed_tools() -> List[Tool]:
+def get_allowed_tools(*, session: PolicySession = _DEFAULT_SESSION) -> List[Tool]:
     ans = []
-    for tool in available_tools:
-        if security_policy is not None and tool["name"] in security_policy:
+    for tool in session.available_tools:
+        if session.security_policy is not None and tool["name"] in session.security_policy:
             ans.append(tool)
-    return ans
+    return copy.deepcopy(ans)
 
 
-def get_current_config() -> Dict:
-    return security_policy
+def get_current_config(*, session: PolicySession = _DEFAULT_SESSION) -> Dict:
+    return copy.deepcopy(session.security_policy)
 
 
-def update_security_policy(policy: dict) -> None:
-    global security_policy
-    security_policy = policy
-    sort_policy()
-    print(f"security policy updated: {security_policy}", file=sys.stderr)
+def update_security_policy(policy: dict, *, session: PolicySession = _DEFAULT_SESSION) -> None:
+    prepared = copy.deepcopy(policy)
+    for name, rules in prepared.items():
+        prepared[name] = sorted(rules, key=lambda rule: (rule[0], -rule[1]))
+    session.security_policy = prepared
+    session.policy_version += 1
+    print(f"security policy updated: {prepared}", file=sys.stderr)
 
 
-def security_policy_type_check() -> None:
-    global security_policy
-    if security_policy is None:
+def security_policy_type_check(*, session: PolicySession = _DEFAULT_SESSION) -> None:
+    if session.security_policy is None:
         return
 
     available_tools_dict = {}
-    for tool in available_tools:
+    for tool in session.available_tools:
         available_tools_dict[tool["name"]] = tool["args"]
 
     # check()
 
 
-def get_generated_policy() -> List:
-    global security_policy
+def get_generated_policy(*, session: PolicySession = _DEFAULT_SESSION) -> List:
     generated_policy = []
-    if security_policy is None:
+    if session.security_policy is None:
         return generated_policy
-    for tool, policies in security_policy.items():
+    for tool, policies in session.security_policy.items():
         for priority, _effect, policy, _fallback in policies:
             if priority == 100:
                 generated_policy.append({"name": tool, "args": policy})
-    return generated_policy
+    return copy.deepcopy(generated_policy)
 
 
-def delete_generated_policy() -> None:
-    global security_policy
-    if security_policy is not None:
-        for tool in list(security_policy.keys()):
-            security_policy[tool] = [x for x in security_policy[tool] if x[0] < 100]
-            if len(security_policy[tool]) == 0:
-                del security_policy[tool]
+def delete_generated_policy(*, session: PolicySession = _DEFAULT_SESSION) -> None:
+    if session.security_policy is not None:
+        retained = _retained_rules(session.security_policy)
+        if retained != session.security_policy:
+            session.security_policy = retained
+            session.policy_version += 1
 
 
-def reset_security_policy(include_human_policy=False) -> None:
-    global security_policy
+def reset_security_policy(include_human_policy=False, *, session: PolicySession = _DEFAULT_SESSION) -> None:
     if include_human_policy:
-        security_policy = None
+        if session.security_policy is not None:
+            session.security_policy = None
+            session.policy_version += 1
+        session.user_query = None
     else:
-        delete_generated_policy()
+        delete_generated_policy(session=session)
     print("security policy reset", file=sys.stderr)
 
 
@@ -164,7 +161,7 @@ total_completion_tokens = 0
 total_prompt_tokens = 0
 
 
-def api_request(sys_prompt, user_prompt, temperature=0.0) -> None:
+def api_request(sys_prompt, user_prompt, temperature=0.0) -> str:
     global total_completion_tokens, total_prompt_tokens
     if policy_model.startswith("claude"):
         from anthropic import Anthropic
@@ -372,51 +369,123 @@ def get_SYS_PROMPT_2() -> str:
     return sys_prompt+output_formater
 
 
-def generate_security_policy(query: str, manual_check=False) -> None:
-    counter = 0
-    temperature = 0.0
-    global init_user_query
-    init_user_query = query
+def _retained_rules(policy):
+    return {
+        name: retained
+        for name, rules in (policy or {}).items()
+        if (retained := [rule for rule in rules if rule[0] < 100])
+    }
+
+
+def _validate_model_candidate(candidate, tools):
+    if not isinstance(candidate, list):
+        return [ValidationIssue("$", "invalid_candidate", "Expected an array of tool rules.")]
+
+    issues = []
+    for index, rule in enumerate(candidate):
+        path = f"$[{index}]"
+        if not isinstance(rule, dict):
+            issues.append(ValidationIssue(path, "invalid_rule", "Expected a tool rule object."))
+            continue
+
+        name = rule.get("name")
+        args = rule.get("args")
+        if not isinstance(name, str) or name not in tools:
+            issues.append(ValidationIssue(f"{path}.name", "unknown_tool", "Expected a registered tool name."))
+        if not isinstance(args, dict):
+            issues.append(ValidationIssue(f"{path}.args", "invalid_arguments", "Expected an argument object."))
+            continue
+        if not isinstance(name, str) or name not in tools:
+            continue
+
+        for arg, restriction in args.items():
+            arg_path = f"{path}.args[{json.dumps(arg)}]"
+            if arg not in tools[name]:
+                issues.append(ValidationIssue(arg_path, "unknown_argument", "Argument is not registered for this tool."))
+            elif isinstance(restriction, dict):
+                warnings = validate_policy_types({name: [(100, 0, {arg: restriction}, 0)]}, tools)
+                issues.extend(ValidationIssue(arg_path, "invalid_schema", warning) for warning in warnings)
+            elif isinstance(restriction, str):
+                try:
+                    re.compile(restriction)
+                except re.error as error:
+                    issues.append(ValidationIssue(arg_path, "invalid_regex", str(error)))
+            else:
+                issues.append(ValidationIssue(arg_path, "invalid_restriction", "Expected a JSON Schema object or regex string."))
+    return issues
+
+
+def _record_policy_attempt(session, candidate, source, status, issues=()):
+    session.records.append(PolicyRecord(
+        session_id=session.session_id,
+        policy_version=session.policy_version,
+        effective_rules=get_current_config(session=session),
+        model_candidate=copy.deepcopy(candidate),
+        source=source,
+        validation_status=status,
+        validation_results=tuple(issues),
+        task_id=session.task_id,
+        model=policy_model,
+    ))
+
+
+def generate_security_policy(
+    query: str, manual_check=False, *, session: PolicySession = _DEFAULT_SESSION
+) -> None:
     if not generate_policy:
+        session.user_query = query
         print("SECAGENT_GENERATE is set to False, skip generating security policy.", file=sys.stderr)
         return
-    content = "TOOLS: "+json.dumps(get_available_tools())+"\nUSER_QUERY: "+query
-    while True:
+
+    tools = get_available_tools(session=session)
+    tools_by_name = {tool["name"]: tool["args"] for tool in tools}
+    content = "TOOLS: " + json.dumps(tools) + "\nUSER_QUERY: " + query
+    prompt = content
+    for attempt in range(3):
+        response = api_request(get_SYS_PROMPT(), prompt, attempt * 0.2)
         try:
-            res = api_request(get_SYS_PROMPT(), content, temperature)
-            print(content, file=sys.stderr)
-            if policy_model.startswith("claude"):
-                generated_policy = extract_json(res, enforce_code_block=True)
-            else:
-                generated_policy = extract_json(res)
-            if manual_check:
-                print(f"The generated security policy is: {generated_policy}.\nDo you want to apply it?[y/N]", file=sys.stderr, end='', flush=True)
-                if input().strip().lower() != "y":
-                    print("The generated security policy is discarded.", file=sys.stderr)
-                    return
-            delete_generated_policy()
-            global security_policy
-            if security_policy is None:
-                security_policy = {}
-            for allowed_tool in generated_policy:
-                tool_name = allowed_tool["name"]
-                if tool_name not in security_policy:
-                    security_policy[tool_name] = []
-                security_policy[tool_name].append((100, 0, allowed_tool["args"], 0))
-            print(f"security policy updated: {security_policy}", file=sys.stderr)
-            return
-        except Exception as e:
-            counter += 1
-            temperature += 0.2
-            if counter > 5:
-                raise e
+            candidate = (
+                extract_json(response, enforce_code_block=policy_model.startswith("claude"))
+                if isinstance(response, str) else None
+            )
+        except json.JSONDecodeError as error:
+            candidate = response
+            issues = [ValidationIssue("$", "invalid_json", error.msg)]
+        else:
+            issues = _validate_model_candidate(candidate, tools_by_name)
+            if candidate is None:
+                candidate = response
+
+        if issues:
+            _record_policy_attempt(session, candidate, "initial_generation", "rejected", issues)
+            feedback = [vars(issue) for issue in issues]
+            prompt = content + "\nVALIDATION_ERRORS: " + json.dumps(feedback)
+            prompt += "\nReturn a corrected complete policy array."
+            continue
+
+        if manual_check:
+            print(f"The generated security policy is: {candidate}.\nDo you want to apply it?[y/N]", file=sys.stderr, end="", flush=True)
+            if input().strip().lower() != "y":
+                _record_policy_attempt(session, candidate, "initial_generation", "declined")
+                print("The generated security policy is discarded.", file=sys.stderr)
+                return
+
+        new_policy = _retained_rules(session.security_policy)
+        for rule in candidate:
+            new_policy.setdefault(rule["name"], []).append((100, 0, rule["args"], 0))
+        update_security_policy(new_policy, session=session)
+        session.user_query = query
+        _record_policy_attempt(session, candidate, "initial_generation", "accepted")
+        return
+
+    raise ValueError("Initial policy rejected after 3 attempts: " + json.dumps(feedback))
 
 
-def decide_whether_to_update(tool_call_param) -> bool:
+def decide_whether_to_update(tool_call_param, *, session: PolicySession = _DEFAULT_SESSION) -> bool:
     counter = 0
     temperature = 0.0
-    content = "TOOLS: "+json.dumps(get_available_tools()) + \
-        "\nUSER_QUERY: "+init_user_query + \
+    content = "TOOLS: "+json.dumps(get_available_tools(session=session)) + \
+        "\nUSER_QUERY: "+(session.user_query or "") + \
         "\nTOOL_CALL_PARAM: "+json.dumps(tool_call_param)
     while True:
         try:
@@ -432,17 +501,17 @@ def decide_whether_to_update(tool_call_param) -> bool:
                 raise e
 
 
-def generate_update_security_policy(tool_call_param, tool_call_result, manual_check=True) -> None:
+def generate_update_security_policy(tool_call_param, tool_call_result, manual_check=True, *, session: PolicySession = _DEFAULT_SESSION) -> None:
     if not generate_policy:
         print("SECAGENT_GENERATE is set to False, skip generating security policy.", file=sys.stderr)
         return
-    if not decide_whether_to_update(tool_call_param):
+    if not decide_whether_to_update(tool_call_param, session=session):
         return
     counter = 0
     temperature = 0.0
-    query = init_user_query
-    current_policy = get_generated_policy()
-    content = "TOOLS: "+json.dumps(get_available_tools())+"\nUSER_QUERY: "+query+"\nTOOL_CALL_PARAM: "+json.dumps(tool_call_param) + \
+    query = session.user_query or ""
+    current_policy = get_generated_policy(session=session)
+    content = "TOOLS: "+json.dumps(get_available_tools(session=session))+"\nUSER_QUERY: "+query+"\nTOOL_CALL_PARAM: "+json.dumps(tool_call_param) + \
         "\nTOOL_CALL_RESULT: "+tool_call_result+"\nCURRENT_RESTRICTIONS: "+json.dumps(current_policy)
     while True:
         try:
@@ -459,36 +528,19 @@ def generate_update_security_policy(tool_call_param, tool_call_result, manual_ch
                 if input().strip().lower() != "y":
                     print("The generated security policy is discarded.", file=sys.stderr)
                     return
-            global security_policy
-            # check subset
-            ONLY_ALLOW_NARROW = os.getenv("SECAGENT_ONLY_ALLOW_NARROW", "False").lower() == "true"
-            if ONLY_ALLOW_NARROW:
-                new_policy = copy.deepcopy(security_policy)
-                if new_policy is not None:
-                    for tool in list(new_policy.keys()):
-                        new_policy[tool] = [x for x in new_policy[tool] if x[0] < 100]
-                        if len(new_policy[tool]) == 0:
-                            del new_policy[tool]
-                if new_policy is None:
-                    new_policy = {}
-                for allowed_tool in generated_policy:
-                    tool_name = allowed_tool["name"]
-                    if tool_name not in new_policy:
-                        new_policy[tool_name] = []
-                    new_policy[tool_name].append((100, 0, allowed_tool["args"], 0))
-                if not security_policy_subset_check(security_policy, new_policy):
+            new_policy = _retained_rules(session.security_policy)
+            for allowed_tool in generated_policy:
+                new_policy.setdefault(allowed_tool["name"], []).append(
+                    (100, 0, allowed_tool["args"], 0)
+                )
+            only_allow_narrow = os.getenv("SECAGENT_ONLY_ALLOW_NARROW", "False").lower() == "true"
+            if only_allow_narrow:
+                if not security_policy_subset_check(session.security_policy or {}, new_policy):
                     print("The generated security policy is not a subset of the previous policy, discard it.", file=sys.stderr)
                     return
-            #
-            delete_generated_policy()
-            if security_policy is None:
-                security_policy = {}
-            for allowed_tool in generated_policy:
-                tool_name = allowed_tool["name"]
-                if tool_name not in security_policy:
-                    security_policy[tool_name] = []
-                security_policy[tool_name].append((100, 0, allowed_tool["args"], 0))
-            print(f"security policy updated: {security_policy}", file=sys.stderr)
+            update_security_policy(new_policy, session=session)
+            status = "subset_checked" if only_allow_narrow else "unverified"
+            _record_policy_attempt(session, generated_policy, "dynamic_update", status)
             return
         except Exception as e:
             counter += 1
@@ -570,13 +622,12 @@ def _check_tool_call(tool_name, kwargs, policies):
     return need_update_policies
 
 
-def check_tool_call(tool_name, kwargs) -> None:
-    global security_policy
-    if security_policy is None:
+def check_tool_call(tool_name, kwargs, *, session: PolicySession = _DEFAULT_SESSION) -> None:
+    if session.security_policy is None:
         print("Warning: security policy is not set.", file=sys.stderr)
         return
     try:
-        policies = security_policy.get(tool_name, None)
+        policies = session.security_policy.get(tool_name, None)
         if policies is None or len(policies) == 0:
             raise ValidationError(f"The tool '{tool_name}' is not allowed.")
         if len(policies) == 0:
@@ -584,10 +635,11 @@ def check_tool_call(tool_name, kwargs) -> None:
         need_update_policies = _check_tool_call(tool_name, kwargs, policies)
         if need_update_policies:
             for tool, policies in need_update_policies.items():
-                security_policy[tool] = policies
-            sort_policy()
+                session.security_policy[tool] = policies
+            session.policy_version += 1
+            sort_policy(session=session)
     except Exception as e:
-        raise ValidationError(f"{e}. Please try other tools or arguments and continue to finish the user task: {init_user_query}.")
+        raise ValidationError(f"{e}. Please try other tools or arguments and continue to finish the user task: {session.user_query}.")
 
 
 if LANGCHAIN_AVAILABLE:  # tested on langchain==1.0.2 langchain-core==1.0.1 langchain-mcp-adapters==0.1.12
@@ -597,7 +649,7 @@ if LANGCHAIN_AVAILABLE:  # tested on langchain==1.0.2 langchain-core==1.0.1 lang
             for arg, value in tool.args.items():
                 if "$ref" in value:
                     args.pop(arg)
-            available_tools.append(Tool(
+            _DEFAULT_SESSION.available_tools.append(Tool(
                 name=tool.name,
                 description=tool.description,
                 args=args,
@@ -673,7 +725,7 @@ if OPENAISDK_AVAILABLE:  # tested on openai-agents==0.4.2
                     for arg, value in tool.params_json_schema["properties"].items():
                         if "$ref" in value:
                             args.pop(arg)
-                    available_tools.append(Tool(
+                    _DEFAULT_SESSION.available_tools.append(Tool(
                         name=tool.name,
                         description=tool.description,
                         args=args,
@@ -688,7 +740,7 @@ if OPENAISDK_AVAILABLE:  # tested on openai-agents==0.4.2
                 for arg, value in tool.params_json_schema["properties"].items():
                     if "$ref" in value:
                         args.pop(arg)
-                available_tools.append(Tool(
+                _DEFAULT_SESSION.available_tools.append(Tool(
                     name=tool.name,
                     description=tool.description,
                     args=args,
@@ -715,7 +767,7 @@ def check_type_hints(type_hint):
     return is_builtin_type_recursive(type_hint)
 
 
-def secure_tool_wrapper(tool: Any) -> Any:
+def secure_tool_wrapper(tool: Any, *, session: PolicySession = _DEFAULT_SESSION) -> Any:
     # Function Tool
     function_docs = parse(tool.__doc__)
     args_docs = function_docs.params
@@ -743,7 +795,7 @@ def secure_tool_wrapper(tool: Any) -> Any:
             else:
                 fields[name] = (type_hint, Field(default=param_default, description=x.description))
     args_model = create_model(tool.__name__, **fields)
-    available_tools.append(Tool(
+    session.available_tools.append(Tool(
         name=tool.__name__,
         description=function_docs.description,
         args=args_model.model_json_schema()["properties"],
@@ -754,17 +806,17 @@ def secure_tool_wrapper(tool: Any) -> Any:
         sig = inspect.signature(tool)
         bound_args = sig.bind(*args, **kwargs)
         bound_args.apply_defaults()
-        check_tool_call(tool.__name__, bound_args.arguments)
+        check_tool_call(tool.__name__, bound_args.arguments, session=session)
         return tool(*args, **kwargs)
     return wrapper
 
 
-def apply_secure_tool_wrapper(input: Any) -> Any:
+def apply_secure_tool_wrapper(input: Any, *, session: PolicySession = _DEFAULT_SESSION) -> Any:
     if isinstance(input, list):
         wrapped_functions = []
         for func in input:
-            wrapped_func = secure_tool_wrapper(func)
+            wrapped_func = secure_tool_wrapper(func, session=session)
             wrapped_functions.append(wrapped_func)
         return wrapped_functions
     else:
-        return secure_tool_wrapper(input)
+        return secure_tool_wrapper(input, session=session)
