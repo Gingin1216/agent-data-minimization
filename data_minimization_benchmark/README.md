@@ -24,13 +24,17 @@ data_minimization_benchmark/
 │  ├─ annotation_guideline.md   # 标注规范 v0.3
 │  └─ disagreements.md          # 复核分歧记录模板
 ├─ docs/
+│  ├─ 01_taskspec_interface.md  # TaskSpec 接口说明（字段语义与消费方规则）
 │  ├─ 02_environment_spec.md    # 环境规格（库表、文件树、注入载体）
 │  ├─ 03_datascope_mapping.md   # 36 条任务的 DataScope 映射与缺口登记
 │  ├─ 04_filescope_v0.1.md      # FileScope 暂定结构与计数口径（FS 折中方案）
-│  └─ 05_splits_and_eval_units.md  # 划分规则与评测单元口径
+│  ├─ 05_splits_and_eval_units.md  # 划分规则与评测单元口径
+│  └─ 06_public_benchmark_mapping.md  # 36 条任务的 AgentDojo / ASB 来源映射
 └─ scripts/
    ├─ validate_tasks.py         # 结构 + DataScope 兼容性 + FS 指纹 + 划分一致性校验
-   └─ build_splits.py           # 生成 splits.csv 与 eval_units.csv
+   ├─ build_splits.py           # 生成 splits.csv 与 eval_units.csv
+   ├─ check_requested_scope.py  # requested_query 与实现层动作核对（9 条拒绝原因）
+   └─ check_db_carriers.py      # DB 注入载体指纹自动核对（3 处）
 ```
 
 ## 2. 快速开始
@@ -56,7 +60,7 @@ python scripts\validate_tasks.py --check-env-hash
 | 模拟数据库 | 5 表 / 191 行 | 可用 |
 | 模拟文件系统 | 12 个文件 | 可用 |
 | 标注规范 / 文档 | v0.3（文档统一版次） | 可用 |
-| 校验脚本 | 2 个（结构 + 划分） | 0 error；12 处 FS 内容指纹、表/列/路径真实性、`counted_in_v1` 均自动核对 |
+| 校验脚本 | 4 个（结构 / 划分 / 请求范围 / DB 载体） | 0 error；12 处 FS 指纹、9 条 requested_query、3 处 DB 载体、表/列/路径真实性、`counted_in_v1` 均自动核对 |
 
 4 条 pilot 的覆盖关系（其余 32 条见 `dataset/task_catalog.csv`）：
 
@@ -71,7 +75,7 @@ python scripts\validate_tasks.py --check-env-hash
 
 | 对象 | 我方提供 | 需要对方提供 |
 | --- | --- | --- |
-| `DataScope`（3 号） | 每条任务的 `must_visit.datascope[]`，ASCII 标识符、单表 SELECT、RowFilter AST | `extract_requested_scope`、`check_data_scope`、`enforce_database_query`（拟议接口） |
+| `DataScope`（3 号） | 每条任务的 `must_visit.datascope[]`，ASCII 标识符、单表 SELECT、RowFilter AST | `sql_to_scope`（已实现，`secagent/sql_to_scope.py`）、`check_data_scope`、`enforce_database_query`（后两者拟议） |
 | `FileScope`（3 号，待确认） | 18 条 FS 任务的 `must_visit.paths[]`（`docs/04_filescope_v0.1.md`） | v1.1 是否接纳该结构 |
 | `PolicyRecord`（5 号） | 任务的禁止范围与期望动作 | DataScope 列表的存储与更新语义 |
 | `DecisionTrace`（2 号） | 判定所需的最小事实（请求范围、命中/未命中）+ `eval_units.csv` | 统一字段与指标口径 |
@@ -81,8 +85,8 @@ python scripts\validate_tasks.py --check-env-hash
 
 1. FS 任务的计数口径已用折中方案定下（18 条计入，`FileScope` 暂定），见 `docs/04_filescope_v0.1.md`；若 3 号不接纳则按该文 §5 回退为「18 核心 + 18 扩展」。
 2. 聚合 / JOIN / `SELECT *` 任务超出 v1.0 支持子集：DB-003 标 `execution_supported=false`（`counted_in_v1=false`），DB-009 作为「预期拒绝」保留但仍可执行；两者不进运行时硬指标的口径见 `docs/05_splits_and_eval_units.md` §3.1。
-3. FS 侧 `content_sha256` 已由校验脚本自动核对（当前 12 处，按 LF 规范化）；DB 侧三条注入载体（`EXP-031/052/068`）的 hash 仍是人工维护，尚未接入脚本。
-4. 运行时范围提取（SQL → RequestedScope）尚未实现，当前只能校验 spec 结构与表/列/路径的真实性。
+3. FS 侧 `content_sha256` 由 `validate_tasks.py` 自动核对（当前 12 处，按 LF 规范化）；DB 侧三条注入载体（`EXP-031/052/068`）由 `check_db_carriers.py` 自动核对（3 处，哈希算法为载体内容 sha256 前 16 位）。
+4. 运行时范围提取已由 3 号以 `sql_to_scope()` 实现（`secagent/sql_to_scope.py`）；9 条 `requested_query` 的拒绝原因由 `check_requested_scope.py` 逐行核对。剩余联调是把该解析接进受限工具的执行链路。
 
 详见 `docs/02_environment_spec.md` §5 与 `annotation/annotation_guideline.md` §11。
 
