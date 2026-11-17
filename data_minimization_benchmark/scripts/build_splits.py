@@ -63,18 +63,22 @@ def main() -> None:
         raise SystemExit(f"以下任务未划入任何 split：{sorted(missing)}")
 
     # 2. splits.csv
-    # counted_in_v1 只由 spec 的 execution_supported 推出：超出 DataScope v1.0 子集的
-    # 任务照样进任务集，但不计入需要运行时判定的指标。
+    # tier：FileScope 回退口径（docs/04_filescope_v0.1.md §5，2026-11-17 起执行）。
+    #   第三组 v1.0 不接纳 FileScope（统一对接文档 v0.1），故 18 条 DB 任务为 core，
+    #   18 条 FS 任务为 extension（单独出数，等 v1.1）。
+    # counted_in_v1 = tier=core 且 execution_supported != false：
+    #   超出 DataScope v1.0 子集的任务（DB-003）与全部 FS 任务不计入 v1 硬指标分母。
     with OUT_SPLITS.open("w", encoding="utf-8", newline="") as f:
         w = csv.writer(f)
-        w.writerow(["task_id", "split", "scenario", "structure", "counted_in_v1",
+        w.writerow(["task_id", "split", "scenario", "structure", "tier", "counted_in_v1",
                     "category", "difficulty", "expected_action", "decision_points", "pairs_with"])
         for name, ids in SPLITS.items():
             for tid in ids:
                 s = specs[tid]
-                counted = str(bool(s.get("execution_supported", True))).lower()
+                tier = "core" if s["scenario"] == "database" else "extension"
+                counted = str(tier == "core" and bool(s.get("execution_supported", True))).lower()
                 w.writerow([
-                    tid, name, s["scenario"], STRUCTURE[s["scenario"]], counted,
+                    tid, name, s["scenario"], STRUCTURE[s["scenario"]], tier, counted,
                     s["category"], s["difficulty"], s["expected_action"],
                     s["decision_points"], s.get("pairs_with", ""),
                 ])
@@ -98,11 +102,12 @@ def main() -> None:
 
     with OUT_UNITS.open("w", encoding="utf-8", newline="") as f:
         w = csv.writer(f)
-        w.writerow(["unit_id", "user_task", "injection_task", "split", "scenario",
+        w.writerow(["unit_id", "user_task", "injection_task", "split", "scenario", "tier",
                     "category", "expected_action", "expected_action_injected",
                     "decision_points", "unit_kind"])
         for user, inj, anchor, kind in units:
             s = specs[anchor]
+            tier = "core" if s["scenario"] == "database" else "extension"
             uid = (f"{user}__{inj}" if kind == "injection"
                    else f"{user}__self" if kind == "self_injection"
                    else f"{user}__clean")
@@ -113,7 +118,7 @@ def main() -> None:
                         if kind == "self_injection" else s["expected_action"])
             inj_out = "none" if kind == "clean" else (anchor if kind == "self_injection" else inj)
             w.writerow([uid, user, inj_out, split_of[anchor],
-                        s["scenario"], s["category"], s["expected_action"], injected,
+                        s["scenario"], tier, s["category"], s["expected_action"], injected,
                         s["decision_points"], kind])
 
     # 4. 打印覆盖情况
@@ -124,14 +129,19 @@ def main() -> None:
         for tid in ids:
             cats[specs[tid]["category"]] = cats.get(specs[tid]["category"], 0) + 1
             acts[specs[tid]["expected_action"]] = acts.get(specs[tid]["expected_action"], 0) + 1
-        counted = sum(1 for tid in ids if specs[tid].get("execution_supported", True))
+        counted = sum(1 for tid in ids
+                      if specs[tid]["scenario"] == "database"
+                      and specs[tid].get("execution_supported", True))
         print(f"  {name}: categories={cats}  actions={acts}  counted_in_v1={counted}")
-    counted_total = sum(1 for s in specs.values() if s.get("execution_supported", True))
+    counted_total = sum(1 for s in specs.values()
+                        if s["scenario"] == "database" and s.get("execution_supported", True))
+    core_total = sum(1 for s in specs.values() if s["scenario"] == "database")
     kinds: dict[str, int] = {}
     for u in units:
         kinds[u[3]] = kinds.get(u[3], 0) + 1
     print(f"eval units: {len(units)}  kinds={kinds}")
-    print(f"counted_in_v1: {counted_total}/{len(specs)}（其余为超出 DataScope v1.0 子集）")
+    print(f"tier=core: {core_total} 条（DB），tier=extension: {len(specs) - core_total} 条（FS，v1.1）")
+    print(f"counted_in_v1: {counted_total}/{len(specs)}（FileScope 回退口径；DB-003 超出 DataScope v1.0 子集）")
     print(f"written: {OUT_SPLITS.name}, {OUT_UNITS.name}")
 
 
