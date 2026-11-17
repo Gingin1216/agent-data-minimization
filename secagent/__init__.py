@@ -13,6 +13,7 @@ from .datascope_row_filter import (
     build_field_variables,
     row_filter_to_z3,
 )
+from .datascope_forbidden import check_forbidden_scope, check_forbidden_scope_set
 from .datascope_v1 import (
     AndFilter,
     CompareFilter,
@@ -63,6 +64,8 @@ __all__ = [
     "build_field_variables",
     "check_data_scope",
     "check_data_scope_set",
+    "check_forbidden_scope",
+    "check_forbidden_scope_set",
     "check_tool_call",
     "generate_security_policy",
     "generate_update_security_policy",
