@@ -15,6 +15,7 @@ from .datascope_row_filter import (
 )
 from .datascope_forbidden import check_forbidden_scope, check_forbidden_scope_set
 from .datascope_sufficiency import FieldSufficiencyResult, check_field_sufficiency
+from .datascope_row_check import RowScopeComparisonResult, check_row_scope
 from .datascope_minimality import (
     ExtraFieldsResult,
     FieldMinimalityResult,
@@ -66,6 +67,7 @@ __all__ = [
     "ValidationIssue",
     "RowFilter",
     "RowFilterError",
+    "RowScopeComparisonResult",
     "SQLScopeError",
     "SQLToScopeResult",
     "ScopeCheckResult",
@@ -82,6 +84,7 @@ __all__ = [
     "check_forbidden_scope_set",
     "check_field_sufficiency",
     "check_field_minimality",
+    "check_row_scope",
     "find_extra_fields",
     "check_tool_call",
     "generate_security_policy",
