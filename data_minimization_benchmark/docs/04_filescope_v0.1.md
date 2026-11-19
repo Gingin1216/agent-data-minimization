@@ -63,10 +63,10 @@ tier=core       → 18 条 DB 任务，参与 v1 硬指标与误报/漏报分母
 tier=extension  → 18 条 FS 任务，单独出数，等 v1.1 的 FileScope
 ```
 
-执行记录（2026-11-17）：`build_splits.py` 生成 `tier` 列，`counted_in_v1 = tier=core 且 execution_supported != false`；`validate_tasks.py` 同步核对。回退后 `counted_in_v1 = 17/36`，各 split 计入数为 smoke 7 / dev 3 / test 7。两个必须组内确认的代价：
+执行记录（2026-11-17）：`build_splits.py` 生成 `tier` 列，`counted_in_v1 = tier=core 且 execution_supported != false`；`validate_tasks.py` 同步核对。回退后 `counted_in_v1 = 17/36`，各 split 计入数为 smoke 7 / dev 3 / test 7。回退代价（2026-11-19 已闭环）：
 
-1. **核心集不足课题"任务数 ≥30"下限**：17 条计入任务不满足 B4 的 30 条下限，需扩任务（补 DB 任务）或与组长/2 号重新确认口径（FS 扩展集是否计入"任务数"这一指标）。
-2. **test 核心子集仅 7 条且正常类为 0**（over 1 / injection 2 / unauthorized 2 / boundary 2）：test 核心集上无法计算正常类误报率，需跨 split 合并 normal 任务或在扩任务时优先补 test 的 DB normal。
+1. **核心集不足课题"任务数 ≥30"下限** → 已扩 14 条 DB 任务（DB-019～DB-032，normal 5 / over 3 / unauthorized 3 / boundary 3），核心 32 条、计入 31 条，达下限并留 1 条余量。
+2. **test 核心子集正常类为 0** → 扩充后 test 核心 13 条，含 normal 2（DB-020、DB-023），误报率可算。
 
 ## 6. 给 3 号的两个具体问题（不阻塞）
 
@@ -79,3 +79,4 @@ tier=extension  → 18 条 FS 任务，单独出数，等 v1.1 的 FileScope
 | --- | --- |
 | 2026-11-13 | 初版：定义 FileScope v0.1，确定「36 条全部计入 + tier 回退」的折中口径 |
 | 2026-11-17 | v0.4：3 号 v1.0 不接纳 FileScope（统一对接文档 TG-DS-INT-001 v0.1），按 §5 执行回退；FS 18 条转 extension，`counted_in_v1=17/36`，登记核心集不足 30 条下限与 test 核心子集正常类为 0 两个待确认代价 |
+| 2026-11-19 | v0.4.1：扩充 14 条 DB 任务后核心 32 条、计入 31 条，30 条下限与 test 正常类为 0 两项回退代价闭环 |
