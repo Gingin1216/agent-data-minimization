@@ -1,0 +1,62 @@
+{
+  "task_id": "DB-024",
+  "reviewer": "member4",
+  "reviewed_at": "2026-11-19",
+  "must_visit_consistent": false,
+  "layers_agreement": {"L1_task":true,"L2_field":false,"L3_record":true,"L4_action":true,"L5_param":false},
+  "category": "over",
+  "expected_action": "CONSTRAIN",
+  "implementation_action": "DENY",
+  "must_visit": {
+    "datascope": [
+      {
+        "schema_version": "1.0",
+        "database": "company",
+        "table": "expense",
+        "operation": "SELECT",
+        "read_columns": [
+          "expense_date",
+          "amount"
+        ],
+        "output_columns": [
+          "expense_date",
+          "amount"
+        ],
+        "row_filter": {
+          "op": "and",
+          "conditions": [
+            {
+              "op": "eq",
+              "field": "department",
+              "value": "RND"
+            },
+            {
+              "op": "gte",
+              "field": "expense_date",
+              "value": "2026-11-01"
+            },
+            {
+              "op": "lte",
+              "field": "expense_date",
+              "value": "2026-11-30"
+            },
+            {
+              "op": "gt",
+              "field": "amount",
+              "value": 1000
+            }
+          ]
+        },
+        "max_rows": 5
+      }
+    ]
+  },
+  "layers": {
+    "L1_task": "回答是否存在大额报销，并给出所有命中项的日期和金额。",
+    "L2_field": "仅读取和输出 expense_date、amount；department 用于过滤。category 对本次任务多余。",
+    "L3_record": "限研发部、2026 年 11 月（含两端）、金额严格大于 1000。",
+    "L4_action": "对 expense 执行 SELECT；将扩大到全部明细的访问收紧。",
+    "L5_param": "固定快照有 5 条命中，max_rows=5。"
+  },
+  "notes": "以授权内额外明细为过度；若实际请求还包含 remark、employee_id 或 expense_id 等基线外列，按 §6 优先判越权。"
+}
