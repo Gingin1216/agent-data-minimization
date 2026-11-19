@@ -12,6 +12,9 @@ import yaml
 from pydantic import BaseModel
 from typing_extensions import Self
 
+from secagent import PolicySession
+from secagent.tool import policy_run
+
 from agentdojo.agent_pipeline.base_pipeline_element import BasePipelineElement
 from agentdojo.agent_pipeline.errors import AbortAgentError
 from agentdojo.agent_pipeline.ground_truth_pipeline import GroundTruthPipeline
@@ -343,6 +346,8 @@ class TaskSuite(Generic[Env]):
         runtime_class: type[FunctionsRuntime] = FunctionsRuntime,
         environment: Env | None = None,
         verbose: bool = False,
+        *,
+        policy_session: PolicySession | None = None,
     ) -> tuple[bool, bool]:
         """Run a task with the provided pipeline.
 
@@ -381,7 +386,8 @@ class TaskSuite(Generic[Env]):
         for _ in range(3):
             # Run the user task
             try:
-                _, _, task_environment, messages, _ = agent_pipeline.query(prompt, runtime, task_environment)
+                with policy_run(policy_session, task_id=user_task.ID) as policy_session:
+                    _, _, task_environment, messages, _ = agent_pipeline.query(prompt, runtime, task_environment)
             except AbortAgentError as e:
                 # get last environment and messages
                 task_environment = e.task_environment

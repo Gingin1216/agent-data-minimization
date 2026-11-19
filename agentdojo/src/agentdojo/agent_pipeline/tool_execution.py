@@ -10,6 +10,7 @@ from agentdojo.functions_runtime import EmptyEnv, Env, FunctionReturnType, Funct
 from agentdojo.logging import Logger
 from agentdojo.types import ChatMessage, ChatToolResultMessage
 from secagent import generate_update_security_policy
+from secagent.tool import current_policy_session
 import os
 
 
@@ -120,7 +121,7 @@ class ToolsExecutor(BasePipelineElement):
             intermediate_results.append(formatted_tool_call_result)
         flag = os.getenv('SECAGENT_UPDATE', "False")
         if flag == "True":
-            generate_update_security_policy(intermediate_calls, str(intermediate_results), manual_check=False)
+            generate_update_security_policy(intermediate_calls, str(intermediate_results), manual_check=False, session=current_policy_session())
         return query, runtime, env, [*messages, *tool_call_results], extra_args
 
 

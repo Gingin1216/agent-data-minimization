@@ -7,7 +7,8 @@ from fastmcp.server.middleware import Middleware, MiddlewareContext
 from fastmcp.server.proxy import ProxyClient
 from mcp import ErrorData
 from mcp.types import TextContent
-from .tool import check_tool_call, generate_security_policy, generate_update_security_policy, update_available_tools, update_always_allowed_tools, Tool
+from .mcp_policy_binding import MCPPolicyBindings
+from .tool import current_policy_session, check_tool_call, generate_security_policy, generate_update_security_policy, update_available_tools, update_always_allowed_tools, Tool
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 import uvicorn
@@ -30,49 +31,17 @@ API_PROXY_TARGET = "http://127.0.0.1"
 
 ENABLE_SECAGENT = os.getenv("ENABLE_SECAGENT", "False").lower() == "true"
 
-TOOL_SET = False
-USER_INPUT_SET = False
-USER_INPUT = None
+POLICY_SESSION_HEADER = "x-progent-policy-token"
+_policy_bindings = MCPPolicyBindings()
+bind_policy_session = _policy_bindings.bind
 
 
 @rest_api.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"])
 async def proxy_request(path: str, request: Request):
-    """Proxy all requests to the target server and print request details"""
-
-    # Print request details
-    # print("\n" + "="*50)
-    # print(f"Proxying Request:")
-    # print(f"Method: {request.method}")
-    # print(f"Path: /{path}")
-    # print(f"Full URL: {request.url}")
-    # print(f"Headers: {dict(request.headers)}")
-
-    # Get request body
+    """Forward requests for a task registered by the trusted host."""
+    if ENABLE_SECAGENT and _policy_bindings.resolve(request.headers.get(POLICY_SESSION_HEADER)) is None:
+        raise HTTPException(status_code=403, detail="Missing or expired Progent task binding.")
     body = await request.body()
-    if body:
-        body_json = json.loads(body)
-        # print(f"Body: {body_json}", file=sys.stderr)
-        global USER_INPUT_SET, USER_INPUT
-        if ENABLE_SECAGENT and not USER_INPUT_SET:
-            messages = body_json.get("messages", [])
-            try:
-                content = messages[1]["content"]
-                if isinstance(content, str):
-                    user_input = content
-                else:
-                    user_input = content[0]["text"]
-                print(f"User Input: {user_input}", file=sys.stderr)
-                if TOOL_SET:
-                    generate_security_policy(user_input)
-                USER_INPUT = user_input
-                USER_INPUT_SET = True
-            except Exception as e:
-                print(f"Error extracting user input: {e}", file=sys.stderr)
-
-        # print(f"Body: {json.dumps(messages, indent=2)}")
-    else:
-        # print("Body: (empty)")
-        pass
 
     print("="*50 + "\n")
 
@@ -83,13 +52,13 @@ async def proxy_request(path: str, request: Request):
         async with httpx.AsyncClient() as client:
             # Prepare headers
             headers = dict(request.headers)
-            new_headers = {"Authorization": headers.get("authorization")}
+            new_headers = {key: headers[key] for key in ("authorization", "content-type") if key in headers}
 
             response = await client.request(
                 method=request.method,
                 url=target_url,
                 headers=new_headers,
-                json=body_json,
+                content=body,
                 params=request.query_params,
                 timeout=600.0
             )
@@ -207,11 +176,13 @@ agent_expert_tool_list = {
 
 suite = os.getenv('SECAGENT_SUITE', None)
 
-def init_policies():
+def init_policies(*, session=None):
+    if session is None:
+        session = current_policy_session()
     if suite == "banking":
-        update_always_allowed_tools(["get_most_recent_transactions"], allow_all_no_arg_tools=True)
+        update_always_allowed_tools(["get_most_recent_transactions"], allow_all_no_arg_tools=True, session=session)
     elif suite == "slack":
-        update_always_allowed_tools(["get_channels", "read_channel_messages", "read_inbox", "get_users_in_channel"])
+        update_always_allowed_tools(["get_channels", "read_channel_messages", "read_inbox", "get_users_in_channel"], session=session)
     elif suite == "travel":
         update_always_allowed_tools([
             "get_user_information",
@@ -236,7 +207,7 @@ def init_policies():
             "search_calendar_events",
             "get_day_calendar_events",
             "get_flight_information"
-        ])
+        ], session=session)
     elif suite == "workspace":
         update_always_allowed_tools([
             "get_unread_emails",
@@ -253,30 +224,34 @@ def init_policies():
             "get_file_by_id",
             "list_files",
             "search_files"
-        ])
-    else:
+        ], session=session)
+    elif suite is not None:
         raise ValueError(f"Unknown suite: {suite}")
 
 
 
+def _require_policy_session(headers):
+    session = _policy_bindings.resolve(headers.get(POLICY_SESSION_HEADER))
+    if session is None:
+        raise McpError(ErrorData(code=-32000, message="Missing or expired Progent task binding."))
+    return session
+
+
 class ListingFilterMiddleware(Middleware):
     async def on_list_tools(self, context: MiddlewareContext, call_next):
-        print("ListingFilterMiddleware: on_list_tools called", file=sys.stderr)
+        headers = get_http_headers()
+        binding = _require_policy_session(headers) if ENABLE_SECAGENT else None
         result = await call_next(context)
 
-        global TOOL_SET
-        if ENABLE_SECAGENT and not TOOL_SET:
-            tool_list = []
-            for tool in result:
-                progent_tool = convert_mcp_tool_to_progent(tool)
-                tool_list.append(progent_tool)
-            update_available_tools(tool_list)
-            init_policies()
-            if USER_INPUT_SET:
-                generate_security_policy(USER_INPUT)
-            TOOL_SET = True
+        if binding is not None and not binding.ready:
+            session = binding.session
+            update_available_tools([convert_mcp_tool_to_progent(tool) for tool in result], session=session)
+            if session.security_policy is None:
+                init_policies(session=session)
+            if session.user_query is not None:
+                generate_security_policy(session.user_query, session=session)
+            binding.ready = session.security_policy is not None
 
-        headers = get_http_headers()
         agent_expert = headers.get('agent_expert', None)
         if agent_expert:
             print(f"Agent Expert: {agent_expert}", file=sys.stderr)
@@ -292,19 +267,24 @@ class ListingFilterMiddleware(Middleware):
 
 class ToolCallFilterMiddleware(Middleware):
     async def on_call_tool(self, context: MiddlewareContext, call_next):
-        print("ToolCallFilterMiddleware: on_call_tool called", file=sys.stderr)
-        print(f"Tool Call: {context}", file=sys.stderr)
-        tool_name, tool_kwargs = context.message.name, context.message.arguments
-        check_tool_call(tool_name, tool_kwargs)
+        tool_name, tool_kwargs = context.message.name, context.message.arguments or {}
+        binding = _require_policy_session(get_http_headers()) if ENABLE_SECAGENT else None
+        session = None
+        if binding is not None:
+            if not binding.ready:
+                raise McpError(ErrorData(code=-32000, message="Task tool policy is not initialized."))
+            session = binding.session
+            if session.security_policy is None:
+                raise McpError(ErrorData(code=-32000, message="Task tool policy is not initialized."))
+            check_tool_call(tool_name, tool_kwargs, session=session)
 
         result = await call_next(context)
-
-        flag = os.getenv('SECAGENT_UPDATE', "True").lower() == "true"
-        if ENABLE_SECAGENT and flag:
+        flag = os.getenv("SECAGENT_UPDATE", "True").lower() == "true"
+        if session is not None and flag and result.content and isinstance(result.content[0], TextContent):
             last_tool_call = {"name": tool_name, "args": tool_kwargs}
-            if isinstance(result.content[0], TextContent):
-                print(f"Tool Result: {result.content[0].text}", file=sys.stderr)
-                generate_update_security_policy([last_tool_call], result.content[0].text, manual_check=False)
+            generate_update_security_policy(
+                [last_tool_call], result.content[0].text, manual_check=False, session=session
+            )
         return result
 
 

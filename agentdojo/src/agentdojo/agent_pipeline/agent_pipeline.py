@@ -1,3 +1,4 @@
+from secagent.tool import policy_run
 import importlib.resources
 import os
 from collections.abc import Iterable, Sequence
@@ -131,9 +132,10 @@ class AgentPipeline(BasePipelineElement):
         extra_args: dict = {},
     ) -> tuple[str, FunctionsRuntime, Env, Sequence[ChatMessage], dict]:
         logger = Logger().get()
-        for element in self.elements:
-            query, runtime, env, messages, extra_args = element.query(query, runtime, env, messages, extra_args)
-            logger.log(messages)
+        with policy_run():
+            for element in self.elements:
+                query, runtime, env, messages, extra_args = element.query(query, runtime, env, messages, extra_args)
+                logger.log(messages)
         return query, runtime, env, messages, extra_args
 
     @classmethod
