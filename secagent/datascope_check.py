@@ -67,12 +67,12 @@ def _coerce_scope(
     value: Any,
     name: str,
 ) -> Tuple[Optional[Any], Optional[ScopeCheckResult]]:
-    if isinstance(value, DataScope):
-        return value, None
-
-    if isinstance(value, Mapping):
+    if isinstance(value, (DataScope, Mapping)):
         try:
-            return DataScope.model_validate(value), None
+            # Models contain mutable lists; construction is not a lasting proof
+            # of validity. Dump also converts nested models for full validation.
+            payload = value.model_dump(mode="python", warnings=False) if isinstance(value, DataScope) else dict(value)
+            return DataScope.model_validate(payload), None
         except ValidationError as exc:
             return None, _unknown(
                 "invalid_datascope",
@@ -131,18 +131,32 @@ def _validate_supported_scope(
     return None
 
 
+def _requested_read_columns(scope: DataScope) -> set[str]:
+    """Predicate use consumes read access, even if omitted from declarations."""
+    def fields(node: Any) -> set[str]:
+        if node.op == "true":
+            return set()
+        if node.op == "and":
+            return set().union(*(fields(child) for child in node.conditions))
+        return {node.field}
+
+    return set(scope.read_columns) | fields(scope.row_filter)
+
+
 def _check_columns(
     requested: Any,
     authorized: Any,
     attribute: str,
 ) -> Optional[ScopeCheckResult]:
-    requested_values = set(getattr(requested, attribute))
+    requested_values = (_requested_read_columns(requested) if attribute == "read_columns"
+                        else set(getattr(requested, attribute)))
     authorized_values = set(getattr(authorized, attribute))
     extra = requested_values - authorized_values
     if extra:
+        dependency_note = " (including filter dependencies)" if attribute == "read_columns" else ""
         return _violated(
             "column_scope_violation",
-            f"requested.{attribute} exceeds authorized: {sorted(extra)}",
+            f"requested.{attribute}{dependency_note} exceeds authorized: {sorted(extra)}",
             path=f"requested.{attribute}",
         )
     return None
@@ -427,7 +441,7 @@ def check_data_scope_set(
 
         possible_read_columns.update(safe_read_columns)
         possible_output_columns.update(safe_output_columns)
-        requested_read_columns = set(requested_scope.read_columns)
+        requested_read_columns = _requested_read_columns(requested_scope)
         requested_output_columns = set(requested_scope.output_columns)
 
         if (
