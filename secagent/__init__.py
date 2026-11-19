@@ -15,7 +15,14 @@ from .datascope_row_filter import (
 )
 from .datascope_forbidden import check_forbidden_scope, check_forbidden_scope_set
 from .datascope_sufficiency import FieldSufficiencyResult, check_field_sufficiency
-from .datascope_minimality import ExtraFieldsResult, FieldUsage, find_extra_fields
+from .datascope_minimality import (
+    ExtraFieldsResult,
+    FieldMinimalityResult,
+    FieldRemovalAttempt,
+    FieldUsage,
+    check_field_minimality,
+    find_extra_fields,
+)
 from .datascope_v1 import (
     AndFilter,
     CompareFilter,
@@ -50,6 +57,8 @@ __all__ = [
     "EqFilter",
     "FieldSufficiencyResult",
     "ExtraFieldsResult",
+    "FieldMinimalityResult",
+    "FieldRemovalAttempt",
     "FieldUsage",
     "InFilter",
     "PolicyRecord",
@@ -72,6 +81,7 @@ __all__ = [
     "check_forbidden_scope",
     "check_forbidden_scope_set",
     "check_field_sufficiency",
+    "check_field_minimality",
     "find_extra_fields",
     "check_tool_call",
     "generate_security_policy",

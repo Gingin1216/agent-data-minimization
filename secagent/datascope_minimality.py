@@ -1,6 +1,6 @@
-"""Task-relative extra fields and syntactic output/filter dependencies.
+"""Task-relative extra fields, dependencies and field-removal verification.
 
-This is C2 analysis, not deletion/revalidation or a minimality proof.
+Single-step minimality is limited to output/read removal with fixed predicates.
 Required fields come from the supplied task specification, never from merely
 appearing in the requested SQL. Row predicates and max_rows are not compared.
 """
@@ -9,11 +9,12 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, Optional, Tuple
+from typing import Any, Literal, Optional, Tuple
 
 from pydantic import ValidationError
 
 from .datascope_check import ScopeCheckStatus
+from .datascope_sufficiency import FieldSufficiencyResult, check_field_sufficiency
 from .datascope_v1 import DataScope, RowFilter
 
 
@@ -169,4 +170,192 @@ def find_extra_fields(
         extra_output_columns=extra_output,
         extra_filter_columns=extra_filter,
         field_usages=tuple(usages),
+    )
+
+
+@dataclass(frozen=True)
+class FieldRemovalAttempt:
+    """One attempted operation, including rejected and final-recheck evidence."""
+
+    operation: Literal["remove_output", "remove_read"]
+    field: str
+    phase: Literal["reduction", "final_recheck"]
+    accepted: bool
+    code: str
+    message: str
+    scope_before: DataScope
+    candidate_scope: Optional[DataScope] = None
+    sufficiency: Optional[FieldSufficiencyResult] = None
+
+
+@dataclass(frozen=True)
+class FieldMinimalityResult:
+    """Status describes the original request, not just the reduced candidate.
+
+    candidate_one_step_minimal refers only to the supported removal operations.
+    Residual extra filter dependencies still prevent task-relative minimality.
+    No result proves row completeness, authorization or general task utility.
+    """
+
+    status: ScopeCheckStatus
+    code: str
+    message: str
+    initial_sufficiency: FieldSufficiencyResult
+    reduced_scope: Optional[DataScope] = None
+    removed_read_columns: Tuple[str, ...] = ()
+    removed_output_columns: Tuple[str, ...] = ()
+    attempts: Tuple[FieldRemovalAttempt, ...] = ()
+    final_sufficiency: Optional[FieldSufficiencyResult] = None
+    final_extra_fields: Optional[ExtraFieldsResult] = None
+    candidate_one_step_minimal: Optional[bool] = None
+    path: Optional[str] = None
+
+
+def _try_field_removal(
+    scope: DataScope,
+    required: DataScope,
+    operation: Literal["remove_output", "remove_read"],
+    field: str,
+    phase: Literal["reduction", "final_recheck"],
+) -> FieldRemovalAttempt:
+    before = scope.model_copy(deep=True)
+    if operation == "remove_read":
+        dependencies = []
+        if field in scope.output_columns:
+            dependencies.append("output")
+        if field in _filter_fields(scope.row_filter):
+            dependencies.append("filter")
+        if dependencies:
+            return FieldRemovalAttempt(
+                operation, field, phase, False, "field_dependency",
+                "Read field is still used by: " + ", ".join(dependencies),
+                scope_before=before,
+            )
+
+    payload = scope.model_dump(mode="python")
+    attribute = "output_columns" if operation == "remove_output" else "read_columns"
+    payload[attribute] = [name for name in payload[attribute] if name != field]
+    try:
+        candidate = DataScope.model_validate(payload)
+    except ValidationError as exc:
+        return FieldRemovalAttempt(
+            operation, field, phase, False, "invalid_candidate",
+            f"Removal would create an invalid DataScope: {exc}",
+            scope_before=before,
+        )
+    sufficiency = check_field_sufficiency(candidate, required)
+    accepted = sufficiency.status is ScopeCheckStatus.PROVED
+    return FieldRemovalAttempt(
+        operation, field, phase, accepted,
+        "removal_preserves_sufficiency" if accepted else sufficiency.code,
+        sufficiency.message,
+        scope_before=before,
+        candidate_scope=candidate,
+        sufficiency=sufficiency,
+    )
+
+
+def check_field_minimality(
+    requested_scope: Any,
+    required_scope: Any,
+) -> FieldMinimalityResult:
+    """Reduce fields in memory, then independently recheck every remaining field.
+
+    Output removals precede read removals, so dropping an extra output can unlock
+    its read permission. Read fields used by the fixed predicate cannot be
+    removed, including predicate fields omitted from explicit read_columns.
+    Empty scopes, whole-request removal, predicate/SQL rewriting, execution and
+    authorization changes are outside this operation set.
+
+    The caller supplies task requirements (e.g. from an upstream policy).
+    Tests may use annotated TaskSpec requirements; this function reads no files.
+    """
+    initial = check_field_sufficiency(requested_scope, required_scope)
+    if initial.status is not ScopeCheckStatus.PROVED:
+        return FieldMinimalityResult(
+            initial.status, initial.code, initial.message,
+            initial_sufficiency=initial, path=initial.path,
+        )
+
+    analysis = find_extra_fields(requested_scope, required_scope)
+    if analysis.status is ScopeCheckStatus.UNKNOWN:
+        return FieldMinimalityResult(
+            ScopeCheckStatus.UNKNOWN, analysis.code, analysis.message,
+            initial_sufficiency=initial, final_extra_fields=analysis,
+            path=analysis.path,
+        )
+
+    original = _parse_scope(requested_scope, "requested_scope")
+    required = _parse_scope(required_scope, "required_scope")
+    current = original.model_copy(deep=True)
+    attempts = []
+    # With fixed predicates, output-first/read-second covers every unlock:
+    # removing reads never unlocks outputs, and reads do not depend on other reads.
+    for operation, attribute in (
+        ("remove_output", "output_columns"),
+        ("remove_read", "read_columns"),
+    ):
+        for field in tuple(getattr(current, attribute)):
+            attempt = _try_field_removal(current, required, operation, field, "reduction")
+            attempts.append(attempt)
+            if attempt.accepted:
+                # Evidence snapshots must not alias the returned reduced scope.
+                current = attempt.candidate_scope.model_copy(deep=True)
+
+    final_sufficiency = check_field_sufficiency(current, required)
+    final_checks = []
+    for operation, attribute in (
+        ("remove_output", "output_columns"),
+        ("remove_read", "read_columns"),
+    ):
+        for field in tuple(getattr(current, attribute)):
+            final_checks.append(
+                _try_field_removal(current, required, operation, field, "final_recheck")
+            )
+    attempts.extend(final_checks)
+    one_step_minimal = (
+        final_sufficiency.status is ScopeCheckStatus.PROVED
+        and all(not attempt.accepted for attempt in final_checks)
+    )
+    remaining = find_extra_fields(current, required)
+    removed_read = tuple(sorted(set(original.read_columns) - set(current.read_columns)))
+    removed_output = tuple(sorted(set(original.output_columns) - set(current.output_columns)))
+
+    if not one_step_minimal or remaining.status is ScopeCheckStatus.UNKNOWN:
+        status = ScopeCheckStatus.UNKNOWN
+        code = "final_recheck_failed"
+        message = "Final field sufficiency or single-step irreducibility was not verified."
+    elif remaining.status is ScopeCheckStatus.VIOLATED:
+        status = ScopeCheckStatus.VIOLATED
+        code = "extra_filter_dependencies_remain"
+        message = (
+            "Extra access remains required by the unchanged request predicate. "
+            "The candidate is irreducible under supported field removals only; "
+            "task-relative field minimality is not proved."
+        )
+    elif removed_read or removed_output:
+        status = ScopeCheckStatus.VIOLATED
+        code = "removable_fields_found"
+        message = (
+            "The original request contains removable fields. The reduced candidate "
+            "is field-sufficient and single-step minimal for the supplied requirements."
+        )
+    else:
+        status = ScopeCheckStatus.PROVED
+        code = "field_minimality_proved"
+        message = (
+            "The original request is field-sufficient with no task-relative extras "
+            "and no valid single-field removal preserves sufficiency. "
+            "Row completeness, authorization and general task utility are not checked."
+        )
+    return FieldMinimalityResult(
+        status=status, code=code, message=message,
+        initial_sufficiency=initial,
+        reduced_scope=current,
+        removed_read_columns=removed_read,
+        removed_output_columns=removed_output,
+        attempts=tuple(attempts),
+        final_sufficiency=final_sufficiency,
+        final_extra_fields=remaining,
+        candidate_one_step_minimal=one_step_minimal,
     )
