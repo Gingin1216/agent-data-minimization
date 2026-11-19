@@ -44,11 +44,10 @@ def _coerce_scope(
     value: Any,
     name: str,
 ) -> Tuple[Optional[DataScope], Optional[ScopeCheckResult]]:
-    if isinstance(value, DataScope):
-        return value, None
-    if isinstance(value, Mapping):
+    if isinstance(value, (DataScope, Mapping)):
         try:
-            return DataScope.model_validate(value), None
+            payload = value.model_dump(mode="python", warnings=False) if isinstance(value, DataScope) else dict(value)
+            return DataScope.model_validate(payload), None
         except ValidationError as exc:
             return None, _unknown(
                 "invalid_datascope",
