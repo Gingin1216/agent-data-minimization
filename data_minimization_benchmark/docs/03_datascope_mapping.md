@@ -110,7 +110,7 @@ v1 受控访问只支持单表只读查询，任务集按此设计，边界如�
 **三条设计取舍（写 limitation 时直接用）**
 
 1. **核心集以单表查询为主**，聚合与星号作为支持边界单独记录、不计入核心——避免"指标声称覆盖了执行不了的能力"。
-2. **多表 `JOIN` / 子查询未纳入**。理由：v1 执行栈只接受单表受控查询，纳入后既出不了执行级指标，也验证不了关联场景下的最小化判定；留待 v1.1 或后续版本扩展。这是代表性上的已知局限，需在报告中如实声明。
+2. **多表 `JOIN` / 子查询未纳入**。约束来源分两层：硬约束是 DataScope v1 结构只有「单表 `table` + `read_columns` + `row_filter`」，无跨表表达（GAP-DB-02），即使标注也转不成 DataScope、拿不到 `PROVED`、无法执行；在此基础上本组主动选择单表形态，以保证 25 条 `reference_sql` 可实跑、`expected_result` 可机械核对。若需补齐，可按 FS 模式挂 `extension` 层（标注齐全、`execution_supported=false`），但真正的执行级验证要等 DataScope 支持跨表。
 3. **文件系统维度以 `extension` 层单独报告**，执行层待 v1.1 接入。标注层已由 `scripts/check_filescope_structure.py` 机检（结构合法性、must/forbidden 冲突、动作层、路径存在性、untrusted 对齐），当前 18/18 结构自洽、0 error。
 
 ## 6. 变更记录
