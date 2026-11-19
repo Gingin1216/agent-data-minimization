@@ -1,8 +1,8 @@
-# TaskSpec → DataScope 映射说明 v0.3
+# TaskSpec → DataScope 映射说明 v0.4
 
 > 依据：`origin/datascope-access-control` 的 `docs/DATASCOPE_V1.md`（3 号，v1.0）
-> 适用范围：本仓库 `data_minimization_benchmark/dataset/task_specs/` 下 36 条任务
-> 结论先行：**18 条数据库任务里 12 条可直接映射，4 条需补充或多条确认，2 条超出 v1.0 支持子集；18 条文件系统任务没有 DataScope 对应结构**（缺口 GAP-FS-01/02/03，已由 `docs/04_filescope_v0.1.md` 的 `FileScope v0.1` 暂定覆盖）。
+> 适用范围：本仓库 `data_minimization_benchmark/dataset/task_specs/` 下 50 条任务（数据库 32 + 文件系统 18）
+> 结论先行：**32 条数据库任务里 26 条可直接映射，4 条需补充行范围/上限表达，2 条超出 v1.0 支持子集；18 条文件系统任务没有 DataScope 对应结构**（缺口 GAP-FS-01/02/03，`FileScope v0.1` 已回退为 extension 层，见 `docs/04_filescope_v0.1.md`）。
 
 ## 1. 映射规则（本组执行口径）
 
@@ -42,8 +42,22 @@
 | DB-016 | `expense` | 单条，空结果 | 可直接映射 |
 | DB-017 | `expense` | 单条，闭区间 `gte`+`lte` | 可直接映射 |
 | DB-018 | `expense` | 单条 + `limit_bound` 记录上限过度 | 需补充上限表达 |
+| DB-019 | `expense` | 单条，3 条件 `and`（部门 + 月份） | 可直接映射 |
+| DB-020 | `expense` | 单条，`row_filter` 限本人 + 月份 | 可直接映射 |
+| DB-021 | `employee` | 单条，`row_filter.eq employee_id`（不在 `read_columns`） | 可直接映射 |
+| DB-022 | `project` | 单条，部门条件 | 可直接映射 |
+| DB-023 | `employee` | 单条，部门条件 + 5 列（含 phone） | 可直接映射 |
+| DB-024 | `expense` | 单条 + `row_bound` 记录金额子集过度 | 需补充行范围表达 |
+| DB-025 | `project` | 单条，仅 `budget` 一列 | 可直接映射 |
+| DB-026 | `employee` | 单条 + `row_bound` 记录行级过度 | 需补充行范围表达 |
+| DB-027 | `expense` + `employee` | 明细一条 + 身份映射进禁止范围 | 可直接映射（身份映射按 DENY） |
+| DB-028 | `expense` | `must_visit` 为空（employee 只能看本人） | 可直接映射 |
+| DB-029 | `project` | `must_visit` 为空（employee 无 project 授权） | 可直接映射（白名单缺失即拒） |
+| DB-030 | `expense` | 单条，单日等值 + 空结果 | 可直接映射 |
+| DB-031 | `expense` | 单条，跨月闭区间 | 可直接映射 |
+| DB-032 | `expense` | 单条，单日等值 | 可直接映射 |
 
-小计：18 条数据库任务中，**可直接映射 12 条**（DB-001/002/004/005/006/010/011/012/014/015/016/017）、**需补充或多条确认 4 条**（DB-007/008/013/018）、**超出 v1.0 支持子集 2 条**（DB-003 聚合、DB-009 星号）。
+小计：32 条数据库任务中，**可直接映射 24 条**、**需补充或待确认 6 条**（DB-007/018/024/026 行范围或上限表达；DB-008 多条 AND 语义、DB-013 部门收敛规则待 3 号确认）、**超出 v1.0 支持子集 2 条**（DB-003 聚合、DB-009 星号）。
 
 ## 3. 三个结构缺口（按优先级）
 
@@ -67,7 +81,7 @@ v1.0 只有单表 SELECT。DB-003 的 `SUM(budget)` 无法表达（答案要聚�
 
 当前 FS 任务的表达方式：`must_visit.paths[]`（`operations` + `content_part` + `max_bytes` + `content_sha256`），靠适配层的受限工具（`mock_fs_list` / `mock_fs_read` / `mock_fs_stat`）执行，不经过 DataScope。
 
-**已按折中口径定下**：FS 18 条计入，采用 `FileScope v0.1`（`docs/04_filescope_v0.1.md`），合计 35/36 计入 v1 硬指标（`DB-003` 因聚合不计入）。3 号若不接纳该结构，按该文 §5 回退为「18 核心 + 18 扩展」。
+**已按折中口径定下**：FS 18 条为 `extension` 层（3 号 v1 不接纳后按 `docs/04_filescope_v0.1.md` §5 回退）；v1 硬指标只计 DB 核心 31 条（32 条减去 `DB-003`）。
 
 ## 4. 与 3 号接口的对接点
 
@@ -84,3 +98,4 @@ v1.0 只有单表 SELECT。DB-003 的 `SUM(budget)` 无法表达（答案要聚�
 | 日期 | 变更 |
 | --- | --- |
 | 2026-11-13 | 初版：36 条任务全部落 spec，登记 3 个 DB 缺口与 3 个 FS 缺口 |
+| 2026-11-19 | v0.4：新增 14 条 DB 任务（DB-019～DB-032）映射；DB 共 32 条，可直接映射 26 条、需补充 4 条、超出支持子集 2 条；FS 改为 extension 层 |

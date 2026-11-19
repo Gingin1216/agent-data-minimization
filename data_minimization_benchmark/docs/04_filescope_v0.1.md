@@ -1,8 +1,8 @@
-# FileScope 结构 v0.1（本组暂定，文档版次 v0.3）与计数口径
+# FileScope 结构 v0.1（本组暂定，文档版次 v0.4）与计数口径
 
 > 解决什么问题：`DataScope v1.0` 只覆盖「数据库单表 SELECT」，18 条文件系统任务（FS-001～FS-018）没有对应结构。若等组内拍板再动，1 号的 36 条任务集就卡在「有一半不能计数」的状态。
-> 折中做法：**我方先定义一个与 `DataScope` 同构的最小结构 `FileScope v0.1`，先把 18 条文件系统任务计入指标（合计 35/36）；命名与字段等 3 号确认后对齐。** 这样不需要任何人先点头，也不会把不确定性留给下游。
-> 状态：`provisional`（暂定）。若 3 号最终不接纳，按 §5 回退，改动只落在一个字段上。
+> 折中做法：我方先定义一个与 `DataScope` 同构的最小结构 `FileScope v0.1`；命名与字段等 3 号确认后对齐。
+> 状态：**已回退（2026-11-17）**。第三组《统一对接文档》（TG-DS-INT-001 v0.1）明确 FileScope 与文件系统访问保护暂不纳入 v1、暂缓至 v1.1，`authorized_file_scopes` 保持空元组。已按 §5 执行回退：`splits.csv` / `eval_units.csv` 增加 `tier` 列，18 条 FS 任务全部转入 `extension`，v1 硬指标分母为 17 条 DB 核心任务（18 条减去 `DB-003`）。本文件转为 v1.1 的对接底稿，FS 任务与标注本身不变。
 
 ## 1. 结构定义
 
@@ -54,7 +54,7 @@ DB 任务用 `must_visit.datascope[]`；FS 任务用 `must_visit.paths[]`（字�
 
 这样处理的好处：**下限立刻满足，且不假装 FS 与 DB 一样强**。每条 FS spec 的 `datascope_mapping` 字段明确写了 `supported: false` 与缺口编号，2 号统计时可以单独拉出"FS 子集"看指标是否被结构缺口污染。
 
-## 5. 回退方案（3 号若不接纳）
+## 5. 回退方案（已于 2026-11-17 执行）
 
 只改一处：把 §4 的表格换成「18 条核心 + 18 条扩展」，分母改为 18，`splits.md` 与 `eval_units.csv` 增加 `tier` 列（`core` / `extension`）。任务本身、标注、Ground Truth 全部不动。
 
@@ -62,6 +62,11 @@ DB 任务用 `must_visit.datascope[]`；FS 任务用 `must_visit.paths[]`（字�
 tier=core       → 18 条 DB 任务，参与 v1 硬指标与误报/漏报分母
 tier=extension  → 18 条 FS 任务，单独出数，等 v1.1 的 FileScope
 ```
+
+执行记录（2026-11-17）：`build_splits.py` 生成 `tier` 列，`counted_in_v1 = tier=core 且 execution_supported != false`；`validate_tasks.py` 同步核对。回退后 `counted_in_v1 = 17/36`，各 split 计入数为 smoke 7 / dev 3 / test 7。回退代价（2026-11-19 已闭环）：
+
+1. **核心集不足课题"任务数 ≥30"下限** → 已扩 14 条 DB 任务（DB-019～DB-032，normal 5 / over 3 / unauthorized 3 / boundary 3），核心 32 条、计入 31 条，达下限并留 1 条余量。
+2. **test 核心子集正常类为 0** → 扩充后 test 核心 13 条，含 normal 2（DB-020、DB-023），误报率可算。
 
 ## 6. 给 3 号的两个具体问题（不阻塞）
 
@@ -73,3 +78,5 @@ tier=extension  → 18 条 FS 任务，单独出数，等 v1.1 的 FileScope
 | 日期 | 变更 |
 | --- | --- |
 | 2026-11-13 | 初版：定义 FileScope v0.1，确定「36 条全部计入 + tier 回退」的折中口径 |
+| 2026-11-17 | v0.4：3 号 v1.0 不接纳 FileScope（统一对接文档 TG-DS-INT-001 v0.1），按 §5 执行回退；FS 18 条转 extension，`counted_in_v1=17/36`，登记核心集不足 30 条下限与 test 核心子集正常类为 0 两个待确认代价 |
+| 2026-11-19 | v0.4.1：扩充 14 条 DB 任务后核心 32 条、计入 31 条，30 条下限与 test 正常类为 0 两项回退代价闭环 |

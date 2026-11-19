@@ -330,12 +330,16 @@ def check_splits(specs_by_id: dict[str, dict]) -> None:
         spec = specs_by_id.get(r["task_id"])
         if not spec:
             continue
-        # counted_in_v1 必须由 execution_supported 推出来，不能写死
-        expected = str(bool(spec.get("execution_supported", True))).lower()
+        # tier 必须与场景一致（FileScope 回退口径：DB=core，FS=extension）
+        tier_expected = "core" if spec["scenario"] == "database" else "extension"
+        if r.get("tier", "") != tier_expected:
+            err("splits", f"{r['task_id']} tier={r.get('tier')!r} 与 scenario={spec['scenario']} 不一致，应为 {tier_expected}")
+        # counted_in_v1 = tier=core 且 execution_supported != false，不能写死
+        expected = str(tier_expected == "core" and bool(spec.get("execution_supported", True))).lower()
         if r.get("counted_in_v1", "").lower() != expected:
             err("splits",
-                f"{r['task_id']} counted_in_v1={r.get('counted_in_v1')!r} 与 execution_supported "
-                f"({spec.get('execution_supported', True)}) 不一致，应为 {expected}")
+                f"{r['task_id']} counted_in_v1={r.get('counted_in_v1')!r} 与 tier/execution_supported "
+                f"({tier_expected}/{spec.get('execution_supported', True)}) 不一致，应为 {expected}")
 
     if not units_csv.exists():
         warn("units", "缺 dataset/eval_units.csv")
