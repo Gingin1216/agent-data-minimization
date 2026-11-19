@@ -1,1 +1,4 @@
 *.pyc
+
+# Detailed generated evaluation artifacts stay local.
+/evaluation/results/**/result.json
