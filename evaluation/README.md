@@ -14,7 +14,7 @@ $env:PYTHONDONTWRITEBYTECODE='1'
 python -m evaluation.run_minimality_batch --output-dir evaluation/results/new_run
 ```
 
-输出目录必须尚不存在，避免覆盖已有报告。非零退出码表示人工扰动存在不符合预期的结果；零退出码不表示原始任务全部受支持。`result.json` 保存每个样例的输入、预期、实际结论、字段删除证据、最终重验及 Z3 反例；`report.md` 为摘要。输入 TaskSpec 与 schema 的 SHA256 也在 JSON 中。
+输出目录必须尚不存在，避免覆盖已有报告。非零退出码表示人工扰动存在不符合预期的结果；零退出码不表示原始任务全部受支持。`result.json` 保存每个样例的输入、预期、实际结论、字段删除证据、最终重验及 Z3 反例；`report.md` 为摘要。输入 TaskSpec 与 schema 的 SHA256 也在 JSON 中。完整 result.json 仅保留在本地并由 Git 忽略；共享仓库只保存脚本和摘要，可按上述命令重新生成详细证据。
 
 本仓库现有归档测试也纳入本次回归，实际使用命令：
 

@@ -186,4 +186,4 @@
 - date_iso uses YYYYMMDD integers; SQL NULL/calendar/schema constraints excluded.
 - Counterexamples are symbolic, not existing database rows.
 
-完整输入、删除和重验证据、反例见同目录 result.json。
+完整输入、删除和重验证据、反例由脚本生成到 result.json，仅保留本地，不纳入 Git。复现命令见 evaluation/README.md。
