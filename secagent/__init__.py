@@ -43,9 +43,13 @@ from .tool import (
     update_security_policy,
 )
 
-from .runtime_authorization import DecisionTrace, check_database_access
+from .runtime_authorization import (
+    DecisionTrace, TaskScopeComparison, check_database_access, run_database_access_with_feedback,
+)
 
 __all__ = [
+    "TaskScopeComparison",
+    "run_database_access_with_feedback",
     "DecisionTrace",
     "check_database_access",
     "AndFilter",
