@@ -37,6 +37,7 @@ data_minimization_benchmark/
    ├─ check_requested_scope.py  # requested_query 与实现层动作核对（9 条拒绝原因，需 .venv）
    ├─ check_db_carriers.py      # DB 注入载体指纹自动核对（3 处）
    ├─ check_expected_results.py # 25 条 reference_sql 在 SQLite 上实跑核对 expected_result
+   ├─ check_filescope_structure.py # FS 18 条 FileScope 结构自洽核对（不依赖执行栈）
    └─ compute_kappa.py          # 双人复核一致性（expected_action Cohen's κ + 层一致率）
 ```
 
