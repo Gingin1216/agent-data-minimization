@@ -102,3 +102,29 @@ with patch.object(t, "api_request", side_effect=responses) as request:
 - LangChain、OpenAI Agents 的 CLI 客户端可通过可信宿主提供的 `PROGENT_POLICY_TOKEN` 转发 MCP 绑定令牌；令牌仍需代理进程内注册。
 - 新增测试覆盖默认拒绝扩权、剩余调用受阻时保留原策略、合法收窄保留人工规则。原有版本冲突测试继续通过。
 - 完整框架合成任务尚未通过验收。尝试安装可选依赖时发生大量版本回溯及 PyPI 超时，本轮中止安装。只完成了适配器源码接线和语法检查，不能据此认定步骤 5 完成。
+
+## 2026-11-20 框架合成任务验收
+
+框架依赖安装已完成，`python -m pip --python .member5-venv/Scripts/python.exe check` 返回 `No broken requirements found`。主要版本为 FastMCP 2.13.0、LangChain 1.0.2、OpenAI Agents 0.4.2、Vertex AI 1.71.1、FastAPI 0.165.0。依赖求解将 OpenAI SDK 从 3.51.0 调整为兼容的 2.54.0。本地 AgentDojo 以可编辑方式安装。
+
+复现依赖安装（安装到项目隔离环境）：
+
+```powershell
+python -m pip --python .member5-venv/Scripts/python.exe install fastmcp==2.13.0 langchain==1.0.2 openai-agents==0.4.2 langchain-mcp-adapters cohere pyyaml deepdiff rich openapi-pydantic jsonref python-dotenv numpy pandas jsonlines langchain-chroma langchain-ollama langchain-openai fastapi vertexai==1.71.1
+python -m pip --python .member5-venv/Scripts/python.exe install --no-deps -e ./agentdojo
+.member5-venv/Scripts/python.exe -m pytest -q -p no:cacheprovider tests/test_framework_synthetic_runs.py
+```
+
+新增 3 个合成任务测试均通过：
+
+| 框架 | 实际执行路径与验证 |
+| --- | --- |
+| AgentDojo | 真实 AgentPipeline、InitQuery、FunctionsRuntime 和 ToolsExecutor。注册 read(key)，生成策略，执行 read(x)，回传结果后收窄为 x |
+| ASB | 初始化合成 Agent 状态后执行真实 ReactAgentAttack.run()、call_tools()。固定规划/模型响应，执行合成只读工具并更新同一会话 |
+| MCP | 真实 FastMCP 服务、中间件和 Client 内存传输，分别绑定两会话，完成列表注册、生成、工具调用、更新。断言两会话分别收窄为 x 和 y，退出后绑定失效 |
+
+模型边界使用固定响应。ASB 使用合成规划、工具及已配置的 Agent 状态，不启动向量库或远程模型；MCP 使用内存传输并注入可信请求头，HTTP 部署链路尚需独立验证。此轮验收针对用户指定的 AgentDojo、ASB、MCP 三个入口。
+
+Windows 沙箱内 asyncio 在 socketpair 初始化时阻塞，获准在沙箱外执行框架测试后通过。这是测试运行环境要求，产品代码未更换事件循环。第三方库出现弃用警告，测试无失败。
+
+最终全套回归结果为 **317 passed, 21 warnings in 9.42s**，新增框架任务 3 项通过，警告来自 Python 与第三方弃用接口。未执行 Git 操作。
