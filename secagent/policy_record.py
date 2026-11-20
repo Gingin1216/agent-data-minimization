@@ -74,6 +74,7 @@ class PolicySession:
     user_query: Optional[str] = None
     available_tools: List[Dict[str, Any]] = field(default_factory=list)
     user_identity: Optional[Mapping[str, Any]] = None
+    remaining_tool_calls: List[Dict[str, Any]] = field(default_factory=list)
     records: List[PolicyRecord] = field(default_factory=list)
     decision_traces: List[Any] = field(default_factory=list)
     _snapshot: Optional[AuthorizationSnapshot] = field(default=None, init=False, repr=False)
@@ -112,6 +113,7 @@ def create_policy_session(
     authorized_data_scopes: Iterable[DataScope] = (),
     forbidden_data_scopes: Optional[Iterable[DataScope]] = None,
     required_data_scopes: Iterable[DataScope] = (),
+    remaining_tool_calls: Iterable[Mapping[str, Any]] = (),
 ) -> PolicySession:
     """Initialize trusted inputs; None means bans are not yet confirmed.
 
@@ -119,6 +121,7 @@ def create_policy_session(
     provide these inputs or set the derived initialization flag.
     """
     session = PolicySession(task_id=task_id, user_query=user_query, user_identity=deepcopy(user_identity))
+    session.remaining_tool_calls = deepcopy(list(remaining_tool_calls))
     scopes = tuple(authorized_data_scopes)
     forbidden = None if forbidden_data_scopes is None else tuple(forbidden_data_scopes)
     required = tuple(required_data_scopes)

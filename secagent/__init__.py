@@ -55,7 +55,7 @@ from .tool import (
 )
 
 from .runtime_authorization import (
-    DecisionTrace, TaskScopeComparison, check_database_access, run_database_access_with_feedback,
+    record_database_result, DecisionTrace, TaskScopeComparison, check_database_access, run_database_access_with_feedback,
 )
 
 from .task_scope_comparator import compare_task_scopes
@@ -64,6 +64,7 @@ __all__ = [
     "compare_task_scopes",
     "TaskScopeComparison",
     "run_database_access_with_feedback",
+    "record_database_result",
     "DecisionTrace",
     "check_database_access",
     "AndFilter",

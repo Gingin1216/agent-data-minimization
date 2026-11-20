@@ -5,7 +5,7 @@ from unittest import TestCase
 from unittest.mock import patch
 
 from secagent.sqlite_guarded_executor import group5_plus_forbidden_gate
-from _fixture import requested_scope
+from tests._fixture import requested_scope
 
 
 class AuthorizationBridgeTests(TestCase):
@@ -17,7 +17,8 @@ class AuthorizationBridgeTests(TestCase):
         )
         trace = SimpleNamespace(
             session_id="s1", task_id="DB-001", policy_version=trace_version,
-            status="PROVED", code="authorized_proved",
+            status=forbidden, code="authorized_proved",
+            message="checked", comparison=SimpleNamespace(forbidden_clear=SimpleNamespace(status=forbidden)),
             requested_scopes=(requested_scope(),),
         )
         policy = ModuleType("secagent.policy_record")

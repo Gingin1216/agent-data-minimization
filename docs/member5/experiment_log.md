@@ -94,3 +94,11 @@ with patch.object(t, "api_request", side_effect=responses) as request:
   "model": "gpt-4o-2024-08-06"
 }
 ```
+
+## 2026-11-20 安全更新与框架接线
+
+- 动态更新默认开启子集检查。明确的剩余工具调用由可信宿主传入 `create_policy_session(remaining_tool_calls=[{"name": ..., "args": ...}])` 或维护会话中的同名列表，更新候选导致其中任一调用受阻时拒绝发布并记录字段路径。TaskSpec 的资源操作尚不能自动推导成具体工具参数，该映射仍由宿主提供。
+- ASB 的 `react_agent_attack.py` 已为每次 run 创建独立会话，工具检查和结果触发更新使用同一会话。沿用其现有无参数工具策略表示。
+- LangChain、OpenAI Agents 的 CLI 客户端可通过可信宿主提供的 `PROGENT_POLICY_TOKEN` 转发 MCP 绑定令牌；令牌仍需代理进程内注册。
+- 新增测试覆盖默认拒绝扩权、剩余调用受阻时保留原策略、合法收窄保留人工规则。原有版本冲突测试继续通过。
+- 完整框架合成任务尚未通过验收。尝试安装可选依赖时发生大量版本回溯及 PyPI 超时，本轮中止安装。只完成了适配器源码接线和语法检查，不能据此认定步骤 5 完成。

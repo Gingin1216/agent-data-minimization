@@ -1,6 +1,7 @@
 """Versioned checks for a database tool before its executor receives SQL."""
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
+from uuid import uuid4
 from copy import deepcopy
 from typing import Any, Mapping, Optional, Tuple
 
@@ -45,6 +46,11 @@ class DecisionTrace:
     comparison: Optional[TaskScopeComparison] = None
     attempt: int = 1
     feedback: Mapping[str, Any] = field(default_factory=dict)
+    decision_id: str = field(default_factory=lambda: uuid4().hex)
+    actual_columns: Tuple[str, ...] = ()
+    actual_row_count: Optional[int] = None
+    db_version: Optional[str] = None
+    env_hash: Optional[str] = None
 
 
 def check_database_access(
@@ -55,12 +61,18 @@ def check_database_access(
     *,
     database: str = "company",
     comparator=None,
+    snapshot=None,
     attempt: int = 1,
 ) -> DecisionTrace:
     """Check one bound SQL request. The executor must require PROVED."""
     if not 1 <= attempt <= 3:
         raise ValueError("attempt must be between 1 and 3")
-    snapshot = get_authorization_snapshot(session)
+    if not isinstance(session, PolicySession):
+        raise ValueError("A trusted PolicySession is required.")
+    if snapshot is None:
+        snapshot = get_authorization_snapshot(session)
+    elif snapshot.session_id != session.session_id or snapshot.task_id != session.task_id:
+        raise ValueError("Snapshot does not belong to the task session.")
     authorized = snapshot.authorized_data_scopes
     requested = ()
 
@@ -100,11 +112,12 @@ def check_database_access(
     if not authorized:
         return decision(ScopeCheckStatus.VIOLATED, "missing_data_scope", "No database scope is authorized.")
     result = check_data_scope_set(requested, authorized, field_types_by_table)
-    needs_comparison = bool(snapshot.forbidden_data_scopes or snapshot.required_data_scopes)
     if comparator is None:
-        if needs_comparison:
-            return decision(ScopeCheckStatus.UNKNOWN, "comparator_unavailable", "Task scope comparator is required.")
-        return decision(result.status, result.code, result.message)
+        try:
+            from .task_scope_comparator import compare_task_scopes
+            comparator = compare_task_scopes
+        except ImportError:
+            return decision(ScopeCheckStatus.UNKNOWN, "comparator_unavailable", "Task scope comparator is unavailable.")
     try:
         comparison = comparator(
             requested_scopes=requested, authorized_scopes=authorized,
@@ -159,3 +172,35 @@ def run_database_access_with_feedback(
         if attempt < 3:
             args = retry_agent(deepcopy(args), deepcopy(trace.feedback))
     return None, trace
+
+
+def record_database_result(
+    session, trace, *, actual_columns, actual_row_count, db_version, env_hash,
+):
+    """Attach observed metadata to the original approved decision, preserving its version.
+
+    actual_returned_scope stays unset: column names and a count cannot establish
+    the exact predicate of returned rows.
+    """
+    if trace.session_id != session.session_id or trace.task_id != session.task_id:
+        raise ValueError("Result belongs to another task session.")
+    if trace.status != ScopeCheckStatus.PROVED or len(trace.requested_scopes) != 1:
+        raise ValueError("Only an approved database decision can receive results.")
+    requested = trace.requested_scopes[0]
+    columns = tuple(actual_columns)
+    if sorted(columns) != sorted(requested.output_columns):
+        raise ValueError("Actual columns do not match the checked projection.")
+    if type(actual_row_count) is not int or not 0 <= actual_row_count <= requested.max_rows:
+        raise ValueError("Actual row count exceeds the checked bound.")
+    if not db_version or not env_hash:
+        raise ValueError("Trusted database version and environment hash are required.")
+    completed = replace(trace, actual_columns=columns, actual_row_count=actual_row_count,
+                        db_version=db_version, env_hash=env_hash)
+    with session._lock:
+        for index, recorded in enumerate(session.decision_traces):
+            if recorded.decision_id == trace.decision_id:
+                if recorded != trace:
+                    raise ValueError("Decision was already completed or modified.")
+                session.decision_traces[index] = deepcopy(completed)
+                return completed
+    raise ValueError("Decision was not issued by this session.")

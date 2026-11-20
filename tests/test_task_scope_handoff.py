@@ -35,11 +35,11 @@ def test_fixture_keeps_three_inputs_separate_and_published():
     assert get_authorization_snapshot(session).forbidden_data_scopes == snapshot.forbidden_data_scopes
 
 
-def test_missing_comparator_denies_and_retains_trace():
+def test_default_comparator_checks_and_retains_trace():
     session = fixture_session()
     trace = check_database_access(session, "company_db_query", {"sql": SQL}, FIELDS)
-    assert trace.status == ScopeCheckStatus.UNKNOWN
-    assert trace.code == "comparator_unavailable"
+    assert trace.status == ScopeCheckStatus.PROVED
+    assert trace.comparison.forbidden_clear.status == ScopeCheckStatus.PROVED
     assert session.decision_traces[-1] == trace
 
 

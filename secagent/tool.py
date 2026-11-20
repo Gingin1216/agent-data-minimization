@@ -546,6 +546,7 @@ def generate_update_security_policy(tool_call_param, tool_call_result, manual_ch
             else:
                 generated_policy = extract_json(res)
             if generated_policy is None:
+                _record_policy_attempt(session, res, "dynamic_update", "declined")
                 return
             tools_by_name = {tool["name"]: tool["args"] for tool in get_available_tools(session=session)}
             issues = _validate_model_candidate(generated_policy, tools_by_name)
@@ -555,14 +556,14 @@ def generate_update_security_policy(tool_call_param, tool_call_result, manual_ch
             if manual_check:
                 print(f"The generated security policy is: {generated_policy}.\nDo you want to apply it?[y/N]", file=sys.stderr, end='', flush=True)
                 if input().strip().lower() != "y":
-                    print("The generated security policy is discarded.", file=sys.stderr)
+                    _record_policy_attempt(session, generated_policy, "dynamic_update", "declined")
                     return
             new_policy = _retained_rules(baseline.effective_rules)
             for allowed_tool in generated_policy:
                 new_policy.setdefault(allowed_tool["name"], []).append(
                     (100, 0, allowed_tool["args"], 0)
                 )
-            only_allow_narrow = os.getenv("SECAGENT_ONLY_ALLOW_NARROW", "False").lower() == "true"
+            only_allow_narrow = os.getenv("SECAGENT_ONLY_ALLOW_NARROW", "True").lower() == "true"
             if only_allow_narrow:
                 if not security_policy_subset_check(baseline.effective_rules or {}, new_policy):
                     _record_policy_attempt(
@@ -570,6 +571,20 @@ def generate_update_security_policy(tool_call_param, tool_call_result, manual_ch
                         [ValidationIssue("$", "policy_not_subset", "The update would exceed the baseline policy.")],
                     )
                     return
+            blocked = []
+            for index, call in enumerate(copy.deepcopy(session.remaining_tool_calls)):
+                try:
+                    rules = new_policy.get(call["name"])
+                    if not rules:
+                        raise ValueError("Required tool is no longer allowed.")
+                    _check_tool_call(call["name"], call["args"], rules)
+                except Exception as error:
+                    blocked.append(ValidationIssue(
+                        f"remaining_tool_calls[{index}]", "remaining_operation_blocked", str(error)
+                    ))
+            if blocked:
+                _record_policy_attempt(session, generated_policy, "dynamic_update", "rejected", blocked)
+                return
             status = "subset_checked" if only_allow_narrow else "unverified"
             publish_policy(
                 session, new_policy, expected_version=baseline.policy_version, source="dynamic_update",
@@ -586,11 +601,13 @@ def generate_update_security_policy(tool_call_param, tool_call_result, manual_ch
             counter += 1
             temperature += 0.2
             if counter > 5:
+                _record_policy_attempt(
+                    session, locals().get("generated_policy"), "dynamic_update", "rejected",
+                    [ValidationIssue("$", "update_failed", str(e))],
+                )
                 if ignore_update_error:
-                    print(f"Error: {e}. Ignore the update error.", file=sys.stderr)
                     return
-                else:
-                    raise e
+                raise
 
 
 class ValidationError(Exception):

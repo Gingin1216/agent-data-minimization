@@ -19,7 +19,7 @@ import jsonlines
 from openai import OpenAI
 from dotenv import load_dotenv
 import pandas as pd
-from secagent import generate_security_policy, update_available_tools, Tool, check_tool_call, update_always_allowed_tools
+from secagent import PolicySession, generate_update_security_policy, generate_security_policy, update_available_tools, Tool, check_tool_call, update_always_allowed_tools
 
 # manual policy
 # update_always_allowed_tools(["sys_monitor", "update_manager", "market_data_api", "portfolio_manager", "legal_doc_review", "compliance_checker", "medical_database", "prescription_manager", "course_selector", "performance_evaluator", "therapy_guide", "mental_health_tracker", "inventory_manager", "sales_analytics", "flight_simulator", "system_analyzer", "research_database", "summarizer", "path_planner", "sensor_fusion"])
@@ -135,8 +135,12 @@ class ReactAgentAttack(BaseAgent):
             #     function_params = None
 
             try:
-                check_tool_call(function_name, {})
+                check_tool_call(function_name, {}, session=self.policy_session)
                 function_response = function_to_call.run(function_params)
+                generate_update_security_policy(
+                    [{"name": function_name, "args": {}}], str(function_response),
+                    manual_check=False, session=self.policy_session,
+                )
 
                 ############ Attacker prompt injection ############
                 if self.args.observation_prompt_injection and not final_stage:
@@ -276,10 +280,11 @@ class ReactAgentAttack(BaseAgent):
         available_tools = []
         for tool in self.tools:
             available_tools.append(Tool(name=tool['function']['name'], description=tool['function']['description'], args={}))
-        update_available_tools(available_tools)
+        self.policy_session = PolicySession()
+        update_available_tools(available_tools, session=self.policy_session)
         # auto policy
         os.environ['SECAGENT_TASK_TYPE'] = 'asb'
-        generate_security_policy(self.task_input)
+        generate_security_policy(self.task_input, session=self.policy_session)
 
         if workflow:
             workflow_failure = False
