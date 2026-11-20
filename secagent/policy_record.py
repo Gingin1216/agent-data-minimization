@@ -31,6 +31,7 @@ class PolicyRecord:
     model: Optional[str] = None
     forbidden_data_scopes: Tuple[DataScope, ...] = ()
     required_data_scopes: Tuple[DataScope, ...] = ()
+    forbidden_data_scopes_initialized: bool = False
 
     def to_dict(self) -> dict:
         """Return a JSON-ready record, describing legacy Python predicates by name."""
@@ -59,6 +60,7 @@ class AuthorizationSnapshot:
     required_data_scopes: Tuple[DataScope, ...] = ()
     # File access stays disabled until the shared FileScope contract exists.
     authorized_file_scopes: Tuple[()] = ()
+    forbidden_data_scopes_initialized: bool = False
 
 
 class PolicyVersionConflict(RuntimeError):
@@ -108,14 +110,19 @@ def create_policy_session(
     user_identity: Optional[Mapping[str, Any]] = None,
     user_query: Optional[str] = None,
     authorized_data_scopes: Iterable[DataScope] = (),
-    forbidden_data_scopes: Iterable[DataScope] = (),
+    forbidden_data_scopes: Optional[Iterable[DataScope]] = None,
     required_data_scopes: Iterable[DataScope] = (),
 ) -> PolicySession:
-    """Initialize from trusted task and authorization inputs."""
+    """Initialize trusted inputs; None means bans are not yet confirmed.
+
+    An explicit empty iterable confirms there are no bans. The Agent cannot
+    provide these inputs or set the derived initialization flag.
+    """
     session = PolicySession(task_id=task_id, user_query=user_query, user_identity=deepcopy(user_identity))
     scopes = tuple(authorized_data_scopes)
-    forbidden, required = tuple(forbidden_data_scopes), tuple(required_data_scopes)
-    if scopes or forbidden or required:
+    forbidden = None if forbidden_data_scopes is None else tuple(forbidden_data_scopes)
+    required = tuple(required_data_scopes)
+    if scopes or forbidden is not None or required:
         publish_policy(session, None, authorized_data_scopes=scopes,
                        forbidden_data_scopes=forbidden, required_data_scopes=required, source="trusted_context")
     return session
@@ -158,8 +165,11 @@ def publish_policy(
 
         forbidden = normalize(forbidden_data_scopes, previous.forbidden_data_scopes)
         required = normalize(required_data_scopes, previous.required_data_scopes)
+        initialized = (previous.forbidden_data_scopes_initialized
+                       if forbidden_data_scopes is None else True)
         snapshot = AuthorizationSnapshot(
-            session.session_id, session.task_id, previous.policy_version + 1, prepared, scopes, forbidden, required
+            session.session_id, session.task_id, previous.policy_version + 1, prepared, scopes, forbidden, required,
+            forbidden_data_scopes_initialized=initialized,
         )
         record = PolicyRecord(
             session_id=snapshot.session_id,
@@ -169,6 +179,7 @@ def publish_policy(
             data_scopes=deepcopy(scopes),
             forbidden_data_scopes=deepcopy(forbidden),
             required_data_scopes=deepcopy(required),
+            forbidden_data_scopes_initialized=initialized,
             model_candidate=deepcopy(candidate),
             source=source,
             validation_status=status,

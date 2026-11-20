@@ -105,6 +105,7 @@ def group5_plus_forbidden_gate(
         from .policy_record import get_authorization_snapshot
         from .runtime_authorization import check_database_access
         from .datascope_forbidden import check_forbidden_scope_set
+        from .task_scope_comparator import compare_task_scopes
     except ImportError:
         return GateDecision("UNKNOWN", "AUTHORIZATION_NOT_INTEGRATED")
     if session is None:
@@ -117,7 +118,8 @@ def group5_plus_forbidden_gate(
         if not isinstance(forbidden, (tuple, list)):
             return GateDecision("UNKNOWN", "INVALID_FORBIDDEN_STATE")
         trace = check_database_access(
-            session, tool_name, dict(args), field_types_by_table, database=database
+            session, tool_name, dict(args), field_types_by_table, database=database,
+            comparator=compare_task_scopes,
         )
         if (getattr(trace, "policy_version", None) != snapshot.policy_version
                 or getattr(trace, "session_id", None) != snapshot.session_id):
