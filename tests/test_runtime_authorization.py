@@ -42,7 +42,7 @@ def db001_session():
     scope = DataScope.model_validate(task["must_visit"]["datascope"][0])
     session = create_policy_session(
         task_id=task["task_id"], user_identity=task["user_identity"],
-        user_query=task["user_query"], authorized_data_scopes=[scope],
+        user_query=task["user_query"], authorized_data_scopes=[scope], forbidden_data_scopes=(),
     )
     publish_policy(session, RULES)
     return session

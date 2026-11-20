@@ -432,6 +432,7 @@ def _record_policy_attempt(session, candidate, source, status, issues=()):
         effective_rules=snapshot.effective_rules,
         data_scopes=snapshot.authorized_data_scopes,
         forbidden_data_scopes=snapshot.forbidden_data_scopes,
+        forbidden_data_scopes_initialized=snapshot.forbidden_data_scopes_initialized,
         required_data_scopes=snapshot.required_data_scopes,
         model_candidate=copy.deepcopy(candidate),
         source=source,
