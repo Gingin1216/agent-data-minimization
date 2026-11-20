@@ -78,6 +78,10 @@ def check_database_access(
     if snapshot.effective_rules is None:
         return decision(ScopeCheckStatus.VIOLATED, "missing_tool_policy", "No tool policy is active.")
 
+    if not snapshot.forbidden_data_scopes_initialized:
+        return decision(ScopeCheckStatus.UNKNOWN, "forbidden_state_not_initialized",
+                        "Trusted host must explicitly confirm forbidden scopes, including an empty list.")
+
     try:
         check_tool_call(tool_name, args, session=session, snapshot=snapshot)
     except ValidationError as error:
