@@ -1,0 +1,160 @@
+{
+  "date": "2026-11-22T23:40:13.530849+08:00",
+  "model": "deepseek-chat",
+  "commit": "92e3fe03c6ec295bacd9d5c3e8e958d8e884c199",
+  "session_id": "1a4a7df4a4d54729880d16d0812440a7",
+  "task_id": "member5-real-model-readonly",
+  "status": "passed",
+  "events": [
+    {
+      "phase": "initial_generation",
+      "policy_version": 2
+    },
+    {
+      "phase": "lookup",
+      "policy_version": 2,
+      "result": {
+        "selected_key": "x",
+        "source": "trusted synthetic catalog"
+      }
+    },
+    {
+      "phase": "policy_update",
+      "version_before": 2,
+      "version_after": 3
+    },
+    {
+      "phase": "read",
+      "policy_version": 3,
+      "result": "synthetic public value"
+    }
+  ],
+  "records": [
+    {
+      "session_id": "1a4a7df4a4d54729880d16d0812440a7",
+      "policy_version": 1,
+      "effective_rules": null,
+      "model_candidate": null,
+      "source": "trusted_context",
+      "validation_status": "unverified",
+      "validation_results": [],
+      "minimality_status": "unverified",
+      "task_id": "member5-real-model-readonly",
+      "data_scopes": [],
+      "model": null,
+      "forbidden_data_scopes": [],
+      "required_data_scopes": [],
+      "forbidden_data_scopes_initialized": true
+    },
+    {
+      "session_id": "1a4a7df4a4d54729880d16d0812440a7",
+      "policy_version": 2,
+      "effective_rules": {
+        "lookup_catalog_key": [
+          [
+            100,
+            0,
+            {},
+            0
+          ]
+        ],
+        "read_catalog_entry": [
+          [
+            100,
+            0,
+            {
+              "key": {
+                "type": "string",
+                "description": "Key returned by lookup_catalog_key."
+              }
+            },
+            0
+          ]
+        ]
+      },
+      "model_candidate": [
+        {
+          "name": "lookup_catalog_key",
+          "args": {}
+        },
+        {
+          "name": "read_catalog_entry",
+          "args": {
+            "key": {
+              "type": "string",
+              "description": "Key returned by lookup_catalog_key."
+            }
+          }
+        }
+      ],
+      "source": "initial_generation",
+      "validation_status": "accepted",
+      "validation_results": [],
+      "minimality_status": "unverified",
+      "task_id": "member5-real-model-readonly",
+      "data_scopes": [],
+      "model": "deepseek-chat",
+      "forbidden_data_scopes": [],
+      "required_data_scopes": [],
+      "forbidden_data_scopes_initialized": true
+    },
+    {
+      "session_id": "1a4a7df4a4d54729880d16d0812440a7",
+      "policy_version": 3,
+      "effective_rules": {
+        "lookup_catalog_key": [
+          [
+            100,
+            0,
+            {},
+            0
+          ]
+        ],
+        "read_catalog_entry": [
+          [
+            100,
+            0,
+            {
+              "key": {
+                "type": "string",
+                "enum": [
+                  "x"
+                ],
+                "description": "Key returned by lookup_catalog_key."
+              }
+            },
+            0
+          ]
+        ]
+      },
+      "model_candidate": [
+        {
+          "name": "lookup_catalog_key",
+          "args": {}
+        },
+        {
+          "name": "read_catalog_entry",
+          "args": {
+            "key": {
+              "type": "string",
+              "enum": [
+                "x"
+              ],
+              "description": "Key returned by lookup_catalog_key."
+            }
+          }
+        }
+      ],
+      "source": "dynamic_update",
+      "validation_status": "subset_checked",
+      "validation_results": [],
+      "minimality_status": "unverified",
+      "task_id": "member5-real-model-readonly",
+      "data_scopes": [],
+      "model": "deepseek-chat",
+      "forbidden_data_scopes": [],
+      "required_data_scopes": [],
+      "forbidden_data_scopes_initialized": true
+    }
+  ]
+}

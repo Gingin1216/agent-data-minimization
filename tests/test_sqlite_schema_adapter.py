@@ -6,7 +6,7 @@ import sqlite3
 import unittest
 
 from secagent.sqlite_schema_adapter import SQLiteSchemaAdapter, SchemaMismatchError
-from _fixture import SQLiteFixture, requested_scope
+from tests._fixture import SQLiteFixture, requested_scope
 
 
 class SQLiteSchemaTests(unittest.TestCase):

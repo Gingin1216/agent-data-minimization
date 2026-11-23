@@ -92,56 +92,31 @@ def group5_plus_forbidden_gate(
     field_types_by_table: Mapping[tuple[str, str], Mapping[str, str]],
     database: str,
 ) -> GateDecision:
-    """Temporary integration bridge: reuse group 5's check and group 4's forbidden guard.
-
-    Retrieves one snapshot before calling group 5. The returned trace must
-    have the *same version and session*. If a concurrent update races the
-    second snapshot read inside check_database_access, deny rather than combine.
-    A trusted explicit initialization bit distinguishes 'no bans' from a
-    missing forbidden-state integration. Remove this bridge once group 5's
-    unified checker returns proven evidence for both layers.
-    """
+    """Compatibility wrapper around member 5's unified authorization check."""
     try:
         from .policy_record import get_authorization_snapshot
         from .runtime_authorization import check_database_access
-        from .datascope_forbidden import check_forbidden_scope_set
-        from .task_scope_comparator import compare_task_scopes
-    except ImportError:
-        return GateDecision("UNKNOWN", "AUTHORIZATION_NOT_INTEGRATED")
-    if session is None:
-        return GateDecision("UNKNOWN", "MISSING_SESSION")
-    try:
+        if session is None:
+            return GateDecision("UNKNOWN", "MISSING_SESSION")
         snapshot = get_authorization_snapshot(session)
-        if not getattr(snapshot, "forbidden_data_scopes_initialized", False):
+        if not snapshot.forbidden_data_scopes_initialized:
             return GateDecision("UNKNOWN", "FORBIDDEN_STATE_NOT_INITIALIZED")
-        forbidden = getattr(snapshot, "forbidden_data_scopes", None)
-        if not isinstance(forbidden, (tuple, list)):
-            return GateDecision("UNKNOWN", "INVALID_FORBIDDEN_STATE")
         trace = check_database_access(
-            session, tool_name, dict(args), field_types_by_table, database=database,
-            comparator=compare_task_scopes,
+            session, tool_name, dict(args), field_types_by_table,
+            database=database, snapshot=snapshot,
         )
-        if (getattr(trace, "policy_version", None) != snapshot.policy_version
-                or getattr(trace, "session_id", None) != snapshot.session_id):
+        if (trace.session_id, trace.task_id, trace.policy_version) != (snapshot.session_id, snapshot.task_id, snapshot.policy_version):
             return GateDecision("UNKNOWN", "POLICY_VERSION_MISMATCH")
-        if _status(trace.status) != "PROVED":
-            return GateDecision(_status(trace.status), getattr(trace, "code", "AUTH_DENIED"),
-                                requested_scopes=tuple(getattr(trace, "requested_scopes", ())),
-                                session_id=snapshot.session_id, task_id=snapshot.task_id,
-                                policy_version=snapshot.policy_version, trace=trace)
-        requested = tuple(getattr(trace, "requested_scopes", ()))
-        if not requested:
-            return GateDecision("UNKNOWN", "MISSING_REQUESTED_SCOPE")
-        forbidden_result = check_forbidden_scope_set(requested, forbidden, field_types_by_table)
+        forbidden_proved = (
+            trace.comparison is not None
+            and _status(trace.comparison.forbidden_clear.status) == "PROVED"
+        )
         return GateDecision(
-            _status(forbidden_result.status),
-            getattr(forbidden_result, "code", "FORBIDDEN_CHECK_FAILED"),
-            requested_scopes=requested,
-            session_id=snapshot.session_id,
-            task_id=snapshot.task_id,
-            policy_version=snapshot.policy_version,
-            forbidden_proved=_status(forbidden_result.status) == "PROVED",
-            trace=trace,
+            _status(trace.status), trace.code, trace.message,
+            requested_scopes=trace.requested_scopes,
+            session_id=trace.session_id, task_id=trace.task_id,
+            policy_version=trace.policy_version,
+            forbidden_proved=forbidden_proved, trace=trace,
         )
     except Exception:
         return GateDecision("UNKNOWN", "AUTHORIZATION_CHECK_FAILED")
@@ -191,8 +166,20 @@ class GuardedSQLiteExecutor:
                 except Exception:
                     return QueryResult(False, "AUDIT_FAILED", "Query result withheld: audit unavailable.",
                                        audit=dict(audit), trace=raw_trace)
+            if ok and raw_trace is not None:
+                from .runtime_authorization import record_database_result
+                try:
+                    completed = record_database_result(
+                        session, raw_trace, actual_columns=columns, actual_row_count=len(rows),
+                        db_version=audit["db_version"], env_hash=audit["env_hash"],
+                    )
+                except ValueError:
+                    return QueryResult(False, "TRACE_FAILED", "Query result withheld: trace mismatch.",
+                                       audit=dict(audit), trace=raw_trace)
+            else:
+                completed = raw_trace
             return QueryResult(ok, code, message, tuple(columns), tuple(tuple(r) for r in rows),
-                               audit=dict(audit), trace=raw_trace)
+                               audit=dict(audit), trace=completed)
 
         if session is None:
             return finish(False, "MISSING_SESSION", "Database access denied: no trusted session.")

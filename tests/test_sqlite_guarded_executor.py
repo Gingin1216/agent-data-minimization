@@ -4,7 +4,7 @@ import unittest
 from secagent.sqlite_guarded_executor import (
     GateDecision, GuardedSQLiteExecutor, make_company_db_query,
 )
-from _fixture import SQLiteFixture, requested_scope
+from tests._fixture import SQLiteFixture, requested_scope
 
 
 LEGAL_SQL = (

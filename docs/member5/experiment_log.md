@@ -94,3 +94,74 @@ with patch.object(t, "api_request", side_effect=responses) as request:
   "model": "gpt-4o-2024-08-06"
 }
 ```
+
+## 2026-11-20 安全更新与框架接线
+
+- 动态更新默认开启子集检查。明确的剩余工具调用由可信宿主传入 `create_policy_session(remaining_tool_calls=[{"name": ..., "args": ...}])` 或维护会话中的同名列表，更新候选导致其中任一调用受阻时拒绝发布并记录字段路径。TaskSpec 的资源操作尚不能自动推导成具体工具参数，该映射仍由宿主提供。
+- ASB 的 `react_agent_attack.py` 已为每次 run 创建独立会话，工具检查和结果触发更新使用同一会话。沿用其现有无参数工具策略表示。
+- LangChain、OpenAI Agents 的 CLI 客户端可通过可信宿主提供的 `PROGENT_POLICY_TOKEN` 转发 MCP 绑定令牌；令牌仍需代理进程内注册。
+- 新增测试覆盖默认拒绝扩权、剩余调用受阻时保留原策略、合法收窄保留人工规则。原有版本冲突测试继续通过。
+- 完整框架合成任务尚未通过验收。尝试安装可选依赖时发生大量版本回溯及 PyPI 超时，本轮中止安装。只完成了适配器源码接线和语法检查，不能据此认定步骤 5 完成。
+
+## 2026-11-20 框架合成任务验收
+
+框架依赖安装已完成，`python -m pip --python .member5-venv/Scripts/python.exe check` 返回 `No broken requirements found`。主要版本为 FastMCP 2.13.0、LangChain 1.0.2、OpenAI Agents 0.4.2、Vertex AI 1.71.1、FastAPI 0.165.0。依赖求解将 OpenAI SDK 从 3.51.0 调整为兼容的 2.54.0。本地 AgentDojo 以可编辑方式安装。
+
+复现依赖安装（安装到项目隔离环境）：
+
+```powershell
+python -m pip --python .member5-venv/Scripts/python.exe install fastmcp==2.13.0 langchain==1.0.2 openai-agents==0.4.2 langchain-mcp-adapters cohere pyyaml deepdiff rich openapi-pydantic jsonref python-dotenv numpy pandas jsonlines langchain-chroma langchain-ollama langchain-openai fastapi vertexai==1.71.1
+python -m pip --python .member5-venv/Scripts/python.exe install --no-deps -e ./agentdojo
+.member5-venv/Scripts/python.exe -m pytest -q -p no:cacheprovider tests/test_framework_synthetic_runs.py
+```
+
+新增 3 个合成任务测试均通过：
+
+| 框架 | 实际执行路径与验证 |
+| --- | --- |
+| AgentDojo | 真实 AgentPipeline、InitQuery、FunctionsRuntime 和 ToolsExecutor。注册 read(key)，生成策略，执行 read(x)，回传结果后收窄为 x |
+| ASB | 初始化合成 Agent 状态后执行真实 ReactAgentAttack.run()、call_tools()。固定规划/模型响应，执行合成只读工具并更新同一会话 |
+| MCP | 真实 FastMCP 服务、中间件和 Client 内存传输，分别绑定两会话，完成列表注册、生成、工具调用、更新。断言两会话分别收窄为 x 和 y，退出后绑定失效 |
+
+模型边界使用固定响应。ASB 使用合成规划、工具及已配置的 Agent 状态，不启动向量库或远程模型；MCP 使用内存传输并注入可信请求头，HTTP 部署链路尚需独立验证。此轮验收针对用户指定的 AgentDojo、ASB、MCP 三个入口。
+
+Windows 沙箱内 asyncio 在 socketpair 初始化时阻塞，获准在沙箱外执行框架测试后通过。这是测试运行环境要求，产品代码未更换事件循环。第三方库出现弃用警告，测试无失败。
+
+最终全套回归结果为 **317 passed, 21 warnings in 9.42s**，新增框架任务 3 项通过，警告来自 Python 与第三方弃用接口。未执行 Git 操作。
+
+## 2026-11-20 真实模型验证（待凭据）
+
+已新增 `real_model_validation.py`，直接调用真实 SDK，依次执行初始生成、本地只读 lookup、模型策略更新和本地只读 read。模型未产生获准的新版本时明确判为未完成更新。JSON 报告保存模型、手动提供的提交号、会话、各工具判定版本、策略记录和失败阶段。
+
+本轮检查进程、用户及系统环境均未发现模型凭据；项目根目录、real-world-agents 和 asb 也没有 .env。实跑在 initial_generation 阶段报 OpenAIError / Missing credentials，未发出真实模型请求，未完成步骤 6。结果在 `real_model_validation_result.json`，提交字段为 UNCONFIRMED。
+
+在已配置凭据的同一 PowerShell 中复现：
+
+```powershell
+.member5-venv/Scripts/python.exe docs/member5/real_model_validation.py --commit 手动确认的完整提交号 --output docs/member5/real_model_validation_result.json
+```
+
+读取 OPENAI_API_KEY、可选 OPENAI_BASE_URL 和 SECAGENT_POLICY_MODEL；默认模型为 gpt-4o-2024-08-06。私密凭据仅在本机环境设置，不写入报告或聊天。
+
+## 2026-11-22 真实模型验证通过
+
+| 项目 | 实测记录 |
+| --- | --- |
+| 执行方式 | 用户在本机配置凭据并执行，助手核对结果 JSON |
+| 模型 | deepseek-chat |
+| 用户提供的提交号 | 92e3fe03c6ec295bacd9d5c3e8e958d8e884c199 |
+| 会话 | 1a4a7df4a4d54729880d16d0812440a7 |
+| 初始生成 | accepted，策略版本 2 |
+| lookup 调用 | 使用版本 2，返回 selected_key=x |
+| 动态更新 | 版本 2 → 3，subset_checked，read_catalog_entry.key 收窄为 enum=["x"] |
+| read 调用 | 使用版本 3，读取 x，返回 synthetic public value |
+| 最终状态 | passed，无失败阶段 |
+| 结果文件 | real_model_validation_result.json |
+
+复现命令：
+
+```powershell
+.member5-venv/Scripts/python.exe docs/member5/real_model_validation.py --commit 92e3fe03c6ec295bacd9d5c3e8e958d8e884c199 --output docs/member5/real_model_validation_result.json
+```
+
+运行前在同一终端配置服务商凭据、兼容接口地址和 SECAGENT_POLICY_MODEL=deepseek-chat。日志不保存凭据；当前报告没有记录接口地址。提交号来自用户运行参数，本轮未用 Git 核验工作区。验证范围为真实模型策略生命周期与本地合成只读操作，严格最小性仍标为 unverified，未进行数据库或框架的真实模型端到端验证。步骤 6 的合成只读任务验收完成。

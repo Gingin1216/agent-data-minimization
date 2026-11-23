@@ -62,7 +62,9 @@ async def main(mcp_server_url: str, task_id: str = None, user_input: str = None)
         name="Streamable HTTP Python Server",
         params={
             "url": mcp_server_url,
-            "headers": {"task_id": task_id}
+            "headers": {**({"task_id": task_id} if task_id else {}),
+                            **({"x-progent-policy-token": os.environ["PROGENT_POLICY_TOKEN"]}
+                               if os.getenv("PROGENT_POLICY_TOKEN") else {})}
         },
     ) as server:
         await run(server, user_input, task_id=task_id)
