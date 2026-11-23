@@ -128,3 +128,40 @@ python -m pip --python .member5-venv/Scripts/python.exe install --no-deps -e ./a
 Windows 沙箱内 asyncio 在 socketpair 初始化时阻塞，获准在沙箱外执行框架测试后通过。这是测试运行环境要求，产品代码未更换事件循环。第三方库出现弃用警告，测试无失败。
 
 最终全套回归结果为 **317 passed, 21 warnings in 9.42s**，新增框架任务 3 项通过，警告来自 Python 与第三方弃用接口。未执行 Git 操作。
+
+## 2026-11-20 真实模型验证（待凭据）
+
+已新增 `real_model_validation.py`，直接调用真实 SDK，依次执行初始生成、本地只读 lookup、模型策略更新和本地只读 read。模型未产生获准的新版本时明确判为未完成更新。JSON 报告保存模型、手动提供的提交号、会话、各工具判定版本、策略记录和失败阶段。
+
+本轮检查进程、用户及系统环境均未发现模型凭据；项目根目录、real-world-agents 和 asb 也没有 .env。实跑在 initial_generation 阶段报 OpenAIError / Missing credentials，未发出真实模型请求，未完成步骤 6。结果在 `real_model_validation_result.json`，提交字段为 UNCONFIRMED。
+
+在已配置凭据的同一 PowerShell 中复现：
+
+```powershell
+.member5-venv/Scripts/python.exe docs/member5/real_model_validation.py --commit 手动确认的完整提交号 --output docs/member5/real_model_validation_result.json
+```
+
+读取 OPENAI_API_KEY、可选 OPENAI_BASE_URL 和 SECAGENT_POLICY_MODEL；默认模型为 gpt-4o-2024-08-06。私密凭据仅在本机环境设置，不写入报告或聊天。
+
+## 2026-11-22 真实模型验证通过
+
+| 项目 | 实测记录 |
+| --- | --- |
+| 执行方式 | 用户在本机配置凭据并执行，助手核对结果 JSON |
+| 模型 | deepseek-chat |
+| 用户提供的提交号 | 92e3fe03c6ec295bacd9d5c3e8e958d8e884c199 |
+| 会话 | 1a4a7df4a4d54729880d16d0812440a7 |
+| 初始生成 | accepted，策略版本 2 |
+| lookup 调用 | 使用版本 2，返回 selected_key=x |
+| 动态更新 | 版本 2 → 3，subset_checked，read_catalog_entry.key 收窄为 enum=["x"] |
+| read 调用 | 使用版本 3，读取 x，返回 synthetic public value |
+| 最终状态 | passed，无失败阶段 |
+| 结果文件 | real_model_validation_result.json |
+
+复现命令：
+
+```powershell
+.member5-venv/Scripts/python.exe docs/member5/real_model_validation.py --commit 92e3fe03c6ec295bacd9d5c3e8e958d8e884c199 --output docs/member5/real_model_validation_result.json
+```
+
+运行前在同一终端配置服务商凭据、兼容接口地址和 SECAGENT_POLICY_MODEL=deepseek-chat。日志不保存凭据；当前报告没有记录接口地址。提交号来自用户运行参数，本轮未用 Git 核验工作区。验证范围为真实模型策略生命周期与本地合成只读操作，严格最小性仍标为 unverified，未进行数据库或框架的真实模型端到端验证。步骤 6 的合成只读任务验收完成。
