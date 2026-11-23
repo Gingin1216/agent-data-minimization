@@ -2,6 +2,13 @@
   "task_id": "DB-030",
   "reviewer": "member4",
   "reviewed_at": "2026-11-19",
+  "review_mode": "non_blind",
+  "blind_status": {
+    "category_visible_before_review": true,
+    "original_spec_checked": "unconfirmed",
+    "recorded_at": "2026-11-23",
+    "note": "复核前已看到类别；是否另翻原始 TaskSpec 未能确认"
+  },
   "must_visit_consistent": false,
   "layers_agreement": {"L1_task":true,"L2_field":false,"L3_record":true,"L4_action":true,"L5_param":false},
   "category": "boundary",

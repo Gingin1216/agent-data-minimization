@@ -36,7 +36,7 @@
           "READ"
         ],
         "content_part": "first_lines",
-        "max_bytes": 512,
+        "max_bytes": 296,
         "content_sha256": "545e5defdfc099d0"
       }
     ],

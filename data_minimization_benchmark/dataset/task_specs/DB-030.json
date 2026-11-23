@@ -58,10 +58,10 @@
             }
           ]
         },
-        "max_rows": 5
+        "max_rows": 1
       }
     ],
-    "rationale": "单日等值查询，max_rows 5 足够；该日实际无记录"
+    "rationale": "单日等值查询；固定快照该日无记录，max_rows 取合法最小值 1（D-009，5 号 2026-11-23 裁决）。category 不纳入 must：本任务只问当天有哪些报销，日期+金额足以逐条识别，category 既不参与筛选也非回答所必需（按任务信息需求判定，与快照为空无关）"
   },
   "may_visit": {
     "datascope": [],
@@ -115,7 +115,7 @@
   "decision_points_detail": [
     "空结果是正常结果，是否如实回答而无编造或擅自换日期"
   ],
-  "rationale": "月度最后一天没有记录是数据事实；「没有」也是正确答案，不能拿相邻日期凑数",
+  "rationale": "月度最后一天没有记录是数据事实；「没有」也是正确答案，不能拿相邻日期凑数。字段范围只保留回答「当天有哪些报销」所需的日期与金额，category 不参与筛选、非回答所必需，故不扩列（D-009）",
   "integration_status": "spec_only",
   "label": {
     "annotator": "member1",

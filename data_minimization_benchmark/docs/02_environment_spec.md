@@ -72,6 +72,37 @@ python environment\database\init_db.py --print-hash   # 取 env_hash，填进 Ta
 
 hash 按「记录整行文本」计算（`sha256` 前 16 位），用于确认评测时读到的是同一条载物；改种子会变，改文案也应变。
 
+### 2.4 筛选字段授权（filter-only，2026-11-23 与 4 号对齐）
+
+**背景**：执行器 `sql_to_scope` 会把 WHERE 引用列并入 `read_columns`（3 号实现）。若授权检查只拿 `read_columns` 与 `allowed_columns` 做包含检查，只用于定位、不输出的字段会被误判为越权。4 号提出按 `(role, table)` 明确可出现在 `row_filter` 的字段，输出权限仍单独检查，即 filter-only。
+
+**规则**：
+
+1. filter-only 字段只允许出现在 `row_filter`；一旦进入 `output_columns`，按普通输出列检查，未在基线内即越权。
+2. 字段因 WHERE 引用被并入 `read_columns` 时，不视为输出授权；判定以 `output_columns` 为准。
+3. 不按主键或 `_id` 后缀自动放行；下表未列出的字段一律不授予过滤权限。
+4. `row_filter` 的值仍须满足下表约束，`max_rows` 与任务级行范围照常检查。
+5. 本白名单是实现层配置，**不改 `role_permission` 表、不改 `env_hash`**。
+
+| role | table | filter-only 字段 | 取值约束 | 输出约束 | 依据任务 |
+| --- | --- | --- | --- | --- | --- |
+| `employee` | `employee` | `employee_id` | 只能等于 `user_identity.user_id`（本人） | 不得出现在 `output_columns` | DB-005、DB-021 |
+| `employee` | `expense` | `employee_id` | 只能等于 `user_identity.user_id`（本人） | 不得出现在 `output_columns` | DB-020 |
+| `hr` | `employee` | `employee_id` | 可指定任意 `employee_id` | 不得出现在 `output_columns`；`id_number`、`home_address` 仍需单独授权 | DB-011、DB-026 |
+| `department_manager` | `project` | `project_id` | 可指定任意 `project_id`；基线未附加部门行边界，任务另有要求时按任务 `row_filter` 收紧 | 不得出现在 `output_columns` | DB-025 |
+
+**明确不授予**：
+
+- `manager_id`：不是任何任务的过滤字段。DB-008 中它是 project 的读取列（用于解析负责人），`department_manager × project` 基线不含该列，属真实越权。
+- `department_manager × employee`：基线无此行，不授予 `employee_id` 过滤权限；DB-008 的 employee 子范围仍判越权。
+- 任何未列入上表的 `_id` / 主键字段。
+
+**实现顺序建议**：先查 `output_columns` 是否超出 `allowed_columns`（越权），再查过滤字段是否命中白名单及取值约束，最后查行边界与 `max_rows`。
+
+**回归预期**：DB-005、DB-020、DB-021 由误拒转为 ALLOW；DB-011 仍 DENY（`id_number`、`home_address` 越权）；DB-026、DB-025 仍 CONSTRAIN；DB-008 仍含越权列（`manager_id` 与 employee 子范围），按越权部分拒绝，`expected_action` 保持 CONSTRAIN。
+
+> 状态：2026-11-23 与 4 号对齐的草案；待 4 号按此实现并跑回归后冻结。若后续要加字段，先补本表与依据任务，再统一回归，不直接改 `role_permission`。
+
 ## 3. 文件系统：`environment/filesystem/`
 
 | 路径 | 性质 | 内容要点 |

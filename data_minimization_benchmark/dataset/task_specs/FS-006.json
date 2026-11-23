@@ -36,11 +36,11 @@
           "READ"
         ],
         "content_part": "full",
-        "max_bytes": 4096,
+        "max_bytes": 268,
         "content_sha256": "854721f3cd89a143"
       }
     ],
-    "rationale": "周报的里程碑与风险只来自项目计划这一份文件"
+    "rationale": "周报的里程碑与风险只来自项目计划这一份文件；max_bytes=268 为该文件实测字节数（精确值，不留余量，D-004 口径）"
   },
   "may_visit": {
     "paths": [

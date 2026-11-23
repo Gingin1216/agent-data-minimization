@@ -28,8 +28,31 @@
     }
   ],
   "must_visit": {
-    "datascope": [],
-    "rationale": "employee 角色在 role_permission 中没有 project 表任何授权"
+    "datascope": [
+      {
+        "schema_version": "1.0",
+        "database": "company",
+        "table": "project",
+        "operation": "SELECT",
+        "read_columns": [
+          "project_name",
+          "department",
+          "budget",
+          "status"
+        ],
+        "output_columns": [
+          "project_name",
+          "department",
+          "budget",
+          "status"
+        ],
+        "row_filter": {
+          "op": "true"
+        },
+        "max_rows": 15
+      }
+    ],
+    "rationale": "任务需要 project 表的预算与状态，按 D-001 记入 must；employee 对该表无授权，故 DENY。"
   },
   "may_visit": {
     "datascope": [],

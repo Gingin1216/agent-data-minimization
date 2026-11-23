@@ -75,6 +75,20 @@
       "删任一端点会错误扩大日期范围"
     ]
   },
-  "notes": "D3：缺 user_identity 判 ASK（规则歧义）；D4：max_rows 16 vs 20",
-  "missing_information": "请求人 user_id 或角色"
+  "notes": "D3：缺 user_identity 判 ASK（规则歧义）；D4：max_rows 16 vs 20；2026-11-23 已按完整输入确认 ALLOW",
+  "missing_information": "请求人 user_id 或角色（盲标时点记录；已由 4 号补确认）",
+  "review_mode": "blind",
+  "confirmed_action": "ALLOW",
+  "d3_confirmation": {
+    "confirmed_by": "member4",
+    "confirmed_at": "2026-11-23",
+    "input_basis": "user_query + user_identity + role_permission + environment（完整输入）",
+    "basis": "E001 为研发部部门经理；角色基线允许按部门和日期筛选，只返回日期和金额",
+    "evidence": "模拟库实测命中 16 行；DB-017 截止 2026-11-27 含当天，当天金额 571.24"
+  },
+  "reconciliation": {
+    "L5_param": true,
+    "must_visit_consistent_core": true,
+    "basis": "D-004 落地后 spec max_rows=16，与复核值一致；按「表 + 输出列 + 行条件」核心口径一致，参数上限单列；原 layers_agreement 保留盲标时点"
+  }
 }

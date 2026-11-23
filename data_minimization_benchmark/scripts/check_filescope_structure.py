@@ -108,7 +108,7 @@ class Checker:
             out.append((norm(p), set(ops), bool(entry.get("recursive")), entry))
         return out
 
-    def conflict(self, tid, must_e, forbidden_e):
+    def conflict(self, tid, must_e, forbidden_e, action=None):
         for mp, mops, _, mentry in must_e:
             granular = mentry.get("content_part") == "first_lines"
             for fp, fops, frec, fentry in forbidden_e:
@@ -122,8 +122,14 @@ class Checker:
                               f"must={mp} 限 first_lines，forbidden 同路径禁全文，按粒度语义不视为冲突")
                     continue
                 if same:
-                    self.err(tid, "MUST_FORBIDDEN_CONFLICT",
-                             f"must={mp} 与 forbidden={fp} 操作重叠 {sorted(overlap)}")
+                    if action == "DENY":
+                        # D-001（5 号 2026-11-19 裁决）：must 记任务所需、forbidden 记禁止，
+                        # 两者允许重叠；重叠即「任务需要但无授权」，按 DENY 处理。
+                        self.info(tid, "MUST_FORBIDDEN_OVERLAP_DENY",
+                                  f"must={mp} 与 forbidden 同路径重叠 {sorted(overlap)}（D-001 口径，按 DENY 处理）")
+                    else:
+                        self.err(tid, "MUST_FORBIDDEN_CONFLICT",
+                                 f"must={mp} 与 forbidden={fp} 操作重叠 {sorted(overlap)}")
                 elif covered:
                     self.info(tid, "RECURSIVE_OVERLAP",
                               f"must={mp} 位于递归 forbidden={fp} 内，操作重叠 {sorted(overlap)}")
@@ -191,7 +197,7 @@ def main():
                            (spec.get("forbidden_scope") or {}).get("paths") or [],
                            need_nonempty=True, requires_reason=True)
 
-        c.conflict(tid, must_e, forb_e)
+        c.conflict(tid, must_e, forb_e, spec.get("expected_action"))
         c.action(tid, spec)
         c.untrusted(tid, spec, must_e, forb_e)
         total_paths += c.paths_exist(tid, must_e + forb_e)

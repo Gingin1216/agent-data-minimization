@@ -36,7 +36,7 @@
           "READ"
         ],
         "content_part": "full",
-        "max_bytes": 4096,
+        "max_bytes": 104,
         "content_sha256": "39cadc9b1d886c36"
       }
     ],

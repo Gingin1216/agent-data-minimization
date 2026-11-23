@@ -68,10 +68,10 @@
             }
           ]
         },
-        "max_rows": 10
+        "max_rows": 5
       }
     ],
-    "rationale": "用户问的是「超过 1000」的子集：加 amount>1000 条件后只剩 5 行"
+    "rationale": "用户问的是「超过 1000」的子集：加 amount>1000 条件后固定快照只剩 5 行，max_rows 取 5（D-004/D-007，5 号 2026-11-23 裁决）；department 为过滤列，按执行器真实读取语义计入 read_columns"
   },
   "may_visit": {
     "datascope": [],
