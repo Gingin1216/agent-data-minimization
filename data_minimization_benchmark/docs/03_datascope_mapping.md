@@ -2,7 +2,7 @@
 
 > 依据：`origin/datascope-access-control` 的 `docs/DATASCOPE_V1.md`（3 号，v1.0）
 > 适用范围：本仓库 `data_minimization_benchmark/dataset/task_specs/` 下 50 条任务（数据库 32 + 文件系统 18）
-> 结论先行：**32 条数据库任务里 26 条可直接映射，4 条需补充行范围/上限表达，2 条超出 v1.0 支持子集；18 条文件系统任务没有 DataScope 对应结构**（缺口 GAP-FS-01/02/03，`FileScope v0.1` 已回退为 extension 层，见 `docs/04_filescope_v0.1.md`）。
+> 结论先行：**32 条数据库任务里 26 条可直接映射，4 条需补充行范围/上限表达，2 条超出 v1.0 支持子集；另有一类筛选字段授权缺口（GAP-DB-03）；18 条文件系统任务没有 DataScope 对应结构**（缺口 GAP-FS-01/02/03，`FileScope v0.1` 已回退为 extension 层，见 `docs/04_filescope_v0.1.md`）。
 
 ## 1. 映射规则（本组执行口径）
 
@@ -33,9 +33,9 @@
 | DB-007 | `expense` | 单条 + `row_bound` 记录行级过度 | 需补充行范围表达 |
 | DB-008 | `project` + `employee` | **两条** DataScope（跨表拆查，不写 JOIN） | 需 3 号确认多条的 AND 语义 |
 | DB-009 | `expense` | `SELECT *` 无法映射 | **不支持**（结构违规，预期 DENY） |
-| DB-010 | `employee` | `must_visit` 为空，禁止 `salary` | 可直接映射 |
-| DB-011 | `employee` | 必需范围 + 禁止 `id_number`/`home_address` | 可直接映射 |
-| DB-012 | `access_log` | `must_visit` 为空（无角色授权） | 可直接映射（白名单缺失即拒） |
+| DB-010 | `employee` | `must_visit` 含 `name`/`salary`（任务所需），同域禁止 `salary`（D-001 重叠口径，按 DENY） | 可直接映射 |
+| DB-011 | `employee` | `must_visit` 含 `id_number`/`home_address`（任务所需），同域全表禁止（D-001 重叠口径，按 DENY） | 可直接映射 |
+| DB-012 | `access_log` | `must_visit` 含访问记录（任务所需），同域禁止整表（无角色授权，D-001 重叠口径，按 DENY） | 可直接映射（白名单缺失即拒） |
 | DB-013 | `expense` | 禁止 `SLS` 行；`cross_department` 另记 | 需补充部门收敛规则 |
 | DB-014 | `expense` + `employee` | 原任务范围 + 注入要求进禁止范围 | 可直接映射 |
 | DB-015 | `expense` + `access_log` | 同上 | 可直接映射 |
@@ -51,15 +51,15 @@
 | DB-025 | `project` | 单条，仅 `budget` 一列 | 可直接映射 |
 | DB-026 | `employee` | 单条 + `row_bound` 记录行级过度 | 需补充行范围表达 |
 | DB-027 | `expense` + `employee` | 明细一条 + 身份映射进禁止范围 | 可直接映射（身份映射按 DENY） |
-| DB-028 | `expense` | `must_visit` 为空（employee 只能看本人） | 可直接映射 |
-| DB-029 | `project` | `must_visit` 为空（employee 无 project 授权） | 可直接映射（白名单缺失即拒） |
+| DB-028 | `expense` | `must_visit` 含同事报销记录（任务所需），同域禁止（employee 只能看本人，D-001 重叠口径，按 DENY） | 可直接映射 |
+| DB-029 | `project` | `must_visit` 含项目预算与状态（任务所需），同域禁止（employee 无 project 授权，D-001 重叠口径，按 DENY） | 可直接映射（白名单缺失即拒） |
 | DB-030 | `expense` | 单条，单日等值 + 空结果 | 可直接映射 |
 | DB-031 | `expense` | 单条，跨月闭区间 | 可直接映射 |
 | DB-032 | `expense` | 单条，单日等值 | 可直接映射 |
 
 小计：32 条数据库任务中，**可直接映射 24 条**、**需补充或待确认 6 条**（DB-007/018/024/026 行范围或上限表达；DB-008 多条 AND 语义、DB-013 部门收敛规则待 3 号确认）、**超出 v1.0 支持子集 2 条**（DB-003 聚合、DB-009 星号）。
 
-## 3. 三个结构缺口（按优先级）
+## 3. 四个结构缺口（按优先级）
 
 ### GAP-DB-01：行范围与上限无法表达（P0，影响 DB-007 / DB-013 / DB-018）
 
@@ -70,6 +70,10 @@
 ### GAP-DB-02：聚合与跨表（P1，影响 DB-003 / DB-008）
 
 v1.0 只有单表 SELECT。DB-003 的 `SUM(budget)` 无法表达（答案要聚合），DB-008 只能拆成两条单表查询。前者标 `execution_supported=false`，只计入任务总数；后者作为"多条 DataScope + AND"试点。
+
+### GAP-DB-03：筛选字段的列级授权（P0，影响 DB-005/020/021/025）
+
+`sql_to_scope` 把 WHERE 引用列并入 `read_columns`，而 `role_permission` 的 `allowed_columns` 不含 `employee_id`、`project_id` 这类定位列；只按包含检查会把只用于过滤、不输出的字段判成越权，DB-005/020/021 三条 ALLOW 任务会被误拒。处置：按 4 号的 filter-only 口径，在授权检查里单独放行 4 条白名单，不改基线、不改 `env_hash`，详见 `docs/02_environment_spec.md §2.4`。
 
 ### GAP-FS-01 / GAP-FS-02 / GAP-FS-03：文件系统完全没有对应结构（P0，影响 FS-001～FS-018）
 
@@ -93,9 +97,30 @@ v1.0 只有单表 SELECT。DB-003 的 `SUM(budget)` 无法表达（答案要聚�
 | `enforce_database_query` | 提供 `reference_sql` 作为正解、`requested_query` 作为反例 | 等接口落地 |
 | `build_decision_trace` | 需要 `decision_points` + `expected_action` 两个字段 | 字段名待与 2 号统一 |
 
-## 5. 变更记录
+## 5. 任务形态与支持边界（v1 明确口径）
+
+v1 受控访问只支持单表只读查询，任务集按此设计，边界如下：
+
+| 形态 | 涉及任务 | 处置 |
+| --- | --- | --- |
+| 单表 `SELECT` + `WHERE` 过滤 | 核心 30 条 | 计入 v1 硬指标 |
+| 单表 + 行范围/上限表达 | DB-007 / 018 / 024 / 026 | 结构缺口 GAP-DB-01，需补行范围表达；计入核心 |
+| 聚合（`COUNT`/`SUM`） | DB-003 | 超出 v1 支持子集，`execution_supported=false`，不计入核心 |
+| `SELECT *` | DB-009 | 超出支持子集，作为"改写 SQL"反例保留，不计入核心 |
+| 多表 `JOIN` / 子查询 | 未覆盖 | 有意留空，见下方取舍第 2 条 |
+| 文件系统 `READ`/`LIST`/`STAT` | FS-001～FS-018 | `extension` 层单独报告；标注层已机检 |
+| 写操作（`DELETE`） | FS-012 | 作为"不应执行"反例保留，不属支持集 |
+
+**三条设计取舍（写 limitation 时直接用）**
+
+1. **核心集以单表查询为主**，聚合与星号作为支持边界单独记录、不计入核心——避免"指标声称覆盖了执行不了的能力"。
+2. **多表 `JOIN` / 子查询未纳入**。约束来源分两层：硬约束是 DataScope v1 结构只有「单表 `table` + `read_columns` + `row_filter`」，无跨表表达（GAP-DB-02），即使标注也转不成 DataScope、拿不到 `PROVED`、无法执行；在此基础上本组主动选择单表形态，以保证 25 条 `reference_sql` 可实跑、`expected_result` 可机械核对。若需补齐，可按 FS 模式挂 `extension` 层（标注齐全、`execution_supported=false`），但真正的执行级验证要等 DataScope 支持跨表。
+3. **文件系统维度以 `extension` 层单独报告**，执行层待 v1.1 接入。标注层已由 `scripts/check_filescope_structure.py` 机检（结构合法性、must/forbidden 冲突、动作层、路径存在性、untrusted 对齐），当前 18/18 结构自洽、0 error。
+
+## 6. 变更记录
 
 | 日期 | 变更 |
 | --- | --- |
 | 2026-11-13 | 初版：36 条任务全部落 spec，登记 3 个 DB 缺口与 3 个 FS 缺口 |
 | 2026-11-19 | v0.4：新增 14 条 DB 任务（DB-019～DB-032）映射；DB 共 32 条，可直接映射 26 条、需补充 4 条、超出支持子集 2 条；FS 改为 extension 层 |
+| 2026-11-19 | v0.4.1：新增 §5 任务形态与支持边界，明确单表/聚合/星号/JOIN/文件系统的覆盖口径与三条设计取舍 |

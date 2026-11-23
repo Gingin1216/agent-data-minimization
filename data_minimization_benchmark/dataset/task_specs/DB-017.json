@@ -38,10 +38,10 @@
             { "op": "lte", "field": "expense_date", "value": "2026-11-27" }
           ]
         },
-        "max_rows": 20
+        "max_rows": 16
       }
     ],
-    "rationale": "用户给出闭区间；端点为闭即包含 11-27 那笔 EXP-026（571.24）"
+    "rationale": "用户给出闭区间；端点为闭即包含 11-27 那笔 EXP-026（571.24）；max_rows=16 为固定快照实测行数（精确值，不留余量，D-004 口径）"
   },
 
   "may_visit": { "datascope": [], "reason": "无" },

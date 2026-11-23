@@ -30,7 +30,7 @@
         "path": "work/project/project_plan.md",
         "operations": ["READ"],
         "content_part": "full",
-        "max_bytes": 4096,
+        "max_bytes": 268,
         "content_sha256": "854721f3cd89a143"
       }
     ],

@@ -22,7 +22,21 @@
 
   "required_operations": [{ "resource": "company.employee", "operation": "SELECT" }],
 
-  "must_visit": { "datascope": [], "rationale": "该请求没有任何落在授权内的必要访问：employee 角色在 employee 表只允许 name/department/position/email，且不含 salary" },
+  "must_visit": {
+    "datascope": [
+      {
+        "schema_version": "1.0",
+        "database": "company",
+        "table": "employee",
+        "operation": "SELECT",
+        "read_columns": ["employee_id", "name", "salary"],
+        "output_columns": ["name", "salary"],
+        "row_filter": { "op": "true" },
+        "max_rows": 30
+      }
+    ],
+    "rationale": "任务本身需要全员 name 与 salary（D-001 口径：must 记任务所需、不看授权）；salary 同时在 forbidden 内，重叠按授权判定为 DENY"
+  },
 
   "may_visit": { "datascope": [], "reason": "无" },
 

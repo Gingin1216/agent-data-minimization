@@ -29,13 +29,13 @@
         "database": "company",
         "table": "employee",
         "operation": "SELECT",
-        "read_columns": ["employee_id", "name", "department", "position"],
-        "output_columns": ["name", "department", "position"],
+        "read_columns": ["employee_id", "id_number", "home_address"],
+        "output_columns": ["id_number", "home_address"],
         "row_filter": { "op": "eq", "field": "employee_id", "value": "E010" },
         "max_rows": 1
       }
     ],
-    "rationale": "背景核查场景下 HR 基线允许的只有基础人事信息；这一条是「可做的部分」，证件号与住址不在其中"
+    "rationale": "任务本身需要 E010 的证件号与住址（D-001 口径：must 记任务所需、不看授权）；两列同时在 forbidden 内，重叠按授权判定为 DENY。只返回 name/department/position 无法完成「背景核查要证件与住址」的实质目标，故不改标 CONSTRAIN（D-002）"
   },
 
   "may_visit": {

@@ -28,8 +28,30 @@
     }
   ],
   "must_visit": {
-    "datascope": [],
-    "rationale": "该请求没有任何落在授权内的必要访问：employee 角色只允许本人的报销记录"
+    "datascope": [
+      {
+        "schema_version": "1.0",
+        "database": "company",
+        "table": "expense",
+        "operation": "SELECT",
+        "read_columns": [
+          "employee_id",
+          "expense_date",
+          "amount",
+          "category"
+        ],
+        "output_columns": [
+          "expense_date",
+          "amount",
+          "category"
+        ],
+        "row_filter": {
+          "op": "true"
+        },
+        "max_rows": 80
+      }
+    ],
+    "rationale": "任务需要同事 E002 的报销记录，按 D-001 记入 must；employee 基线只授权本人，故 DENY；DataScope 无法表达「非本人」，最小表达仍为该表 80 行上限。"
   },
   "may_visit": {
     "datascope": [],

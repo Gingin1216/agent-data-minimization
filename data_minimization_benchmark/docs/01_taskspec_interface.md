@@ -1,7 +1,7 @@
 # TaskSpec 接口说明 v0.1
 
 > 提供方：编号 1（实验评测组）｜使用方：编号 2、3、5
-> 本文只描述 `dataset/task_specs/` 下 36 条 JSON 已经在用的字段，不新增字段。
+> 本文描述 `dataset/task_specs/` 下 JSON 已经在用的字段；`remaining_tool_calls` 为与 5 号联调新增的 pilot 字段，当前只落 `DB-001` 样例（见 §2 末尾说明）。
 > 配套位置：`data_minimization_benchmark/dataset/task_specs/`，一条任务一个文件，文件名即 `task_id`。
 
 ## 1. 这是什么
@@ -51,6 +51,12 @@ TaskSpec 是一条任务的「考卷＋答案」：用户要什么、以什么�
 | `rationale` | 整条任务的判定理由 |
 | `integration_status` / `integration_note` | 联调状态，当前均为 `spec_only` |
 | `origin` / `version` / `created_at` | 任务来源、版本号、创建日期 |
+| `remaining_tool_calls` | 任务运行器的调用预算（可信参考基准，语义已由 5 号确认：任务后续仍必须被允许的必要调用），供 5 号「更新保护」校验收窄后仍覆盖后续必要调用；结构 `[{name, args}]`（当前仅 DB-001 落样例） |
+| `remaining_tool_calls_note` | 该字段的工具名、参数与映射来源说明 |
+
+**`remaining_tool_calls` 结构**：数组元素固定 `{name, args}`。DB 侧 `name` 已由 3 号确认为 `company_db_query(sql: str, params=None)`（`params` 可选，样例不传），`args` 只含 `sql`（SQL 取 `reference_sql` 的必要范围，不取 `requested_query`）；FS 侧 v1 暂缓，预留 `mock_fs_read` / `mock_fs_list` / `mock_fs_stat`。该字段定位是**任务运行器维护的调用预算**，由可信宿主维护，用于校验收窄后的策略仍覆盖后续必要调用；它**不加入 DataScope 八字段，也不作为数据库访问权限的替代条件**。多步任务即多条元素数组；字段语义已由 5 号确认并冻结（2026-11-23：任务后续仍必须被允许的必要调用），当前只落 DB-001 契约样例。
+
+**`remaining_tool_calls` 中 SQL 的执行子集要求**：必须能被 `secagent/sql_to_scope.py` 解析——显式 `LIMIT`（缺 LIMIT 会被拒绝，`max_rows` 无法推断）、不写 `ORDER BY`、单表、显式列清单、WHERE 仅用 `= / IN / > / >= / < / <= / AND`。若 `reference_sql` 超出该子集，按必要范围改写为等价 SQL 后填入（去 `ORDER BY`、补 `LIMIT`），改写只影响执行兼容性，不改变范围。
 
 **注入类附加字段**：`pairs_with`（配对的干净任务编号，`FS-002` 取 `none`）、`carrier`（注入载体，含 `location`、`content_sha256`、`preview`、`delivery_note`，数据库载体另含 `record_key`）、`injected_goal`、`injected_actions`（注入想诱导的动作，结构同 DataScope 条目）；自身注入的 `FS-002` 另用 `unit_kind: "self_injection"`、`injected_request`、`expected_action_on_injected_request`。
 

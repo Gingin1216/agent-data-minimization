@@ -21,12 +21,12 @@ data_minimization_benchmark/
 │  ├─ reset.py                  # → filesystem/
 │  └─ filesystem/               # 生成物，不提交（public / work / sensitive / untrusted）
 ├─ annotation/
-│  ├─ annotation_guideline.md   # 标注规范 v0.5
-│  ├─ disagreements.md          # 复核分歧记录（D1–D6 已登记，待 5 号裁决）
-│  └─ review_round1/            # 双人复核独立标签（member4 已交 7 条）与模板
+│  ├─ annotation_guideline.md   # 标注规范 v0.8
+│  ├─ disagreements.md          # 复核分歧记录（D1–D9 已裁；D-010 filter-only 对齐中）
+│  └─ review_round1/            # 双人复核独立标签（member4 已交 10 条）与模板
 ├─ docs/
 │  ├─ 01_taskspec_interface.md  # TaskSpec 接口说明（字段语义与消费方规则）
-│  ├─ 02_environment_spec.md    # 环境规格（库表、文件树、注入载体）
+│  ├─ 02_environment_spec.md    # 环境规格（库表、文件树、注入载体、§2.4 filter-only 白名单草案）
 │  ├─ 03_datascope_mapping.md   # 50 条任务的 DataScope 映射与缺口登记
 │  ├─ 04_filescope_v0.1.md      # FileScope 结构与计数口径（3 号 v1 不接纳，已回退 extension）
 │  ├─ 05_splits_and_eval_units.md  # 划分规则与评测单元口径
@@ -37,6 +37,7 @@ data_minimization_benchmark/
    ├─ check_requested_scope.py  # requested_query 与实现层动作核对（9 条拒绝原因，需 .venv）
    ├─ check_db_carriers.py      # DB 注入载体指纹自动核对（3 处）
    ├─ check_expected_results.py # 25 条 reference_sql 在 SQLite 上实跑核对 expected_result
+   ├─ check_filescope_structure.py # FS 18 条 FileScope 结构自洽核对（不依赖执行栈）
    └─ compute_kappa.py          # 双人复核一致性（expected_action Cohen's κ + 层一致率）
 ```
 
@@ -62,9 +63,9 @@ python scripts\validate_tasks.py --check-env-hash
 | 评测单元 | 50（clean 44 / injection 5 / self_injection 1） | 已生成（`eval_units.csv`） |
 | 模拟数据库 | 5 表 / 191 行 | 可用 |
 | 模拟文件系统 | 12 个文件 | 可用 |
-| 标注规范 / 文档 | 规范 v0.5；splits 文档 v0.5 | 可用 |
+| 标注规范 / 文档 | 规范 v0.8；splits 文档 v0.5 | 可用 |
 | 校验脚本 | 5 个（结构 / 划分 / 请求范围 / DB 载体 / 标准答案数值） | 0 error；12 处 FS 指纹、9 条 requested_query、3 处 DB 载体、25 条 reference_sql、表/列/路径真实性、`counted_in_v1` 均自动核对 |
-| 双人复核 | member4 已交 7 条（动作 κ=0.562，D3 规则澄清后参考 1.000）；新增任务待补 3 条 | D1–D6 待 5 号裁决；member2 复核未回，test 未冻结 |
+| 双人复核 | member4 已交 10 条（盲标 7 条正式 κ=1.000；非盲 3 条单列 2/3；合并 10 条参考 0.855） | D-001～D-009 已裁（5 号 2026-11-19/23）；D-010 filter-only 白名单待 4 号实现；member2 复核未回，test 未冻结 |
 
 4 条 pilot 的覆盖关系（其余 46 条见 `dataset/task_catalog.csv`）：
 
@@ -96,7 +97,7 @@ python scripts\validate_tasks.py --check-env-hash
 
 ## 6. 下一步（对齐 `总指导.md` 的阶段计划）
 
-1. 双人复核进行中：member4 已交 7 条（`annotation/review_round1/`），新增任务再补 3 条（DB-024、DB-025、DB-030，补 over 与 boundary 双标覆盖）；D1–D6 分歧待 5 号裁决（`annotation/disagreements.md`）；member2 的注入 6 条 + 抽样与 0.1% 分母口径待返回；裁决与双方复核完成后回填 reviewer、冻结 test。
+1. 双人复核进行中：member4 已交 10 条（`annotation/review_round1/`，含 DB-024/025/030 三条追加）；D1–D9 已裁，D-010 filter-only 白名单待 4 号实现并回归。正式动作 κ 按盲标 7 条计 1.000，非盲 3 条单列，合并 10 条参考 0.855；member2 的注入 6 条 + 抽样与 0.1% 分母口径待返回；双方复核完成后回填 reviewer、冻结 test。
 2. ~~按 catalog 补齐 TaskSpec~~（已完成：原 36 条 + 2026-11-19 新增 14 条 DB 任务，共 50 条）。
 3. ~~任务划分与评测单元~~（已完成：`splits.csv` + `eval_units.csv`）。
 4. 与 3 号联调 `company_db_query` / `mock_fs_*` 三个受限工具，把 spec 变成可跑的评测单元。

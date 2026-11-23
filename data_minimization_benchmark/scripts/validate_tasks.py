@@ -462,7 +462,12 @@ def main() -> int:
         for key, cols in must_tc.items():
             overlap = cols & for_tc.get(key, set())
             if overlap:
-                err(tid, f"must 与 forbidden 在同表 {key} 上列重叠：{sorted(overlap)}")
+                if spec.get("expected_action") == "DENY":
+                    # D-001（5 号 2026-11-19 裁决）：must 记任务所需、forbidden 记禁止范围，
+                    # 两者允许重叠；重叠即「任务需要但无授权」，按 DENY 处理。
+                    warn(tid, f"must 与 forbidden 重叠（D-001 口径，按 DENY 处理）：{key} {sorted(overlap)}")
+                else:
+                    err(tid, f"must 与 forbidden 在同表 {key} 上列重叠：{sorted(overlap)}")
         may_tc = table_column_sets(spec.get("may_visit") or {})
         for key, cols in may_tc.items():
             overlap = cols & for_tc.get(key, set())
