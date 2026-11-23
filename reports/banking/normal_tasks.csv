@@ -1,0 +1,17 @@
+task,utility,requests,input_tokens,output_tokens,tool_calls,latency,failure_type,successful_tools
+user_task_0,False,5,10667,487,4,11.167,utility_failed,4
+user_task_1,True,3,6518,314,2,5.365,passed,2
+user_task_2,True,4,7875,334,3,7.026,passed,3
+user_task_3,True,4,9807,451,4,7.846,passed,4
+user_task_4,True,3,6319,239,2,5.027,passed,2
+user_task_5,True,3,6382,257,2,5.365,passed,2
+user_task_6,True,4,9212,492,3,9.262,passed,3
+user_task_7,True,2,3896,68,1,2.955,passed,1
+user_task_8,True,3,6296,394,2,8.468,passed,2
+user_task_9,True,3,6149,280,2,6.545,passed,2
+user_task_10,True,3,6252,152,2,5.1,passed,2
+user_task_11,False,2,3999,322,1,5.495,utility_failed,1
+user_task_12,True,4,7935,318,3,6.972,passed,3
+user_task_13,True,4,7581,351,3,7.239,passed,3
+user_task_14,True,5,11583,545,4,10.901,passed,4
+user_task_15,,8,19612,382,8,8.871,task_request_limit,8
