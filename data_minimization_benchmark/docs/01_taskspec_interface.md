@@ -34,7 +34,7 @@ TaskSpec 是一条任务的「考卷＋答案」：用户要什么、以什么�
 | `decision_points` | 判定点个数，≥1 的整数；指标按判定点计数，不按任务计数 |
 | `label` | 标注信息，见 §10 |
 
-**常规可选字段**（36 条中按需出现，消费方按字段名取用即可）：
+**常规可选字段**（50 条中按需出现，消费方按字段名取用即可）：
 
 | 字段 | 含义 |
 | --- | --- |
@@ -173,7 +173,7 @@ TaskSpec 是一条任务的「考卷＋答案」：用户要什么、以什么�
 1. TaskSpec 由编号 1 维护，其它成员只读；字段结构调整先改本文件再改数据。
 2. 标准答案只写在 TaskSpec 里，不写入 DataScope；策略侧不依据答案生成规则。
 3. 标注层与实现层是两个口径：`expected_action` 保留 `CONSTRAIN`；`implementation_action` 只落 `ALLOW` 或 `DENY`，因为 v1.0 引擎不做查询改写，`CONSTRAIN` 实现为 `DENY` 加原因。
-4. 是否计入 v1 硬指标由 `execution_supported` 推出 `counted_in_v1`，脚本逐行核对，手写即 error；当前 35/36，`DB-003` 聚合任务不计入。
+4. 是否计入 v1 硬指标由 `execution_supported` 推出 `counted_in_v1`，脚本逐行核对，手写即 error；当前 31/50（DB 32 条中 `DB-003` 聚合任务不计入；FS 18 条全部为 `extension`，待 v1.1）。
 5. 环境以 `env_hash` 为准；指纹变化时以新版重跑，历史数字不回改。
 6. 运行结果通过 `DecisionTrace` 与本文件中的 `expected_result`、`utility_check`、`security_check` 对照，不直接在 TaskSpec 上写运行结果。
 7. 范围重叠时禁止优先：同一数据同时落在允许范围与禁止范围，按禁止处理；范围比较返回 `UNKNOWN`（无法判定）时同样按拒绝，与 `DATASCOPE_V1.md §4.2` 的保守口径一致。
