@@ -102,7 +102,11 @@
 - 正式 Schema：`annotation/annotations.schema.json`；可复制模板：`annotation/annotations.template.json`。
 - `DB-099` 只是占位，不是真实任务；提交时替换为真实 `task_id`。
 - `task_count` 必须等于 `annotations` 长度；`task_id` 不能重复；`reviewer` 必须与文件级一致。
-- 校验：`python data_minimization_benchmark/scripts/check_annotations.py <你的 annotations.json>`。
+- 校验（仓库 `.venv` 已装 `jsonschema`）：
+  ```powershell
+  cd data_minimization_benchmark
+  ..\.venv\Scripts\python.exe scripts\check_annotations.py <你的 annotations.json>
+  ```
 - 完整 TaskSpec 不在 `annotations.json` 里重复；`dataset/task_specs/<task_id>.json` 仍是唯一完整标注。
 
 ## 6. 非盲标记

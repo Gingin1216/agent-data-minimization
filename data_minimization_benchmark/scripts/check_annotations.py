@@ -1,7 +1,7 @@
 """校验 annotations.json 提交文件。
 
-用法：
-    python data_minimization_benchmark/scripts/check_annotations.py annotation/annotations.template.json
+用法（在 `data_minimization_benchmark/` 下，仓库 `.venv` 已装 jsonschema）：
+    ..\.venv\Scripts\python.exe scripts\check_annotations.py annotation/annotations.template.json
 
 检查两层：
 1. JSON Schema（annotation/annotations.schema.json）；
