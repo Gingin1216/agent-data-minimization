@@ -1,0 +1,183 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Gingin1216/agent-data-minimization/annotation/annotations.schema.json",
+  "title": "DataScope benchmark review annotations submission",
+  "description": "复核人提交的批量标注文件。一个文件可含多条 review label；每条 label 与 annotation/review_round1/<task_id>.json 同构。完整 TaskSpec 不在这里重复，仍以 dataset/task_specs/<task_id>.json 为准。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "reviewer", "reviewed_at", "task_count", "annotations"],
+  "properties": {
+    "schema_version": {
+      "const": "annotations/1.0"
+    },
+    "reviewer": {
+      "type": "string",
+      "minLength": 1,
+      "description": "复核人标识，例如 member2 / member4"
+    },
+    "reviewed_at": {
+      "type": "string",
+      "format": "date",
+      "description": "本批复核完成日期，YYYY-MM-DD"
+    },
+    "task_count": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "必须等于 annotations 数组长度；由 scripts/check_annotations.py 复核"
+    },
+    "annotations": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/annotation"
+      }
+    }
+  },
+  "$defs": {
+    "taskId": {
+      "type": "string",
+      "pattern": "^(DB|FS)-[0-9]{3}$"
+    },
+    "action": {
+      "enum": ["ALLOW", "CONSTRAIN", "DENY", "ASK"]
+    },
+    "layer": {
+      "type": "string",
+      "minLength": 1,
+      "description": "填「一致」或写你的独立判定 + 理由"
+    },
+    "annotation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "task_id",
+        "reviewer",
+        "reviewed_at",
+        "review_mode",
+        "expected_action",
+        "implementation_action",
+        "must_visit_consistent",
+        "must_visit_consistent_basis",
+        "layers",
+        "review_confidence"
+      ],
+      "properties": {
+        "task_id": {
+          "$ref": "#/$defs/taskId"
+        },
+        "reviewer": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reviewed_at": {
+          "type": "string",
+          "format": "date"
+        },
+        "review_mode": {
+          "enum": ["blind", "non_blind"]
+        },
+        "expected_action": {
+          "$ref": "#/$defs/action"
+        },
+        "implementation_action": {
+          "enum": ["ALLOW", "DENY", null],
+          "description": "ALLOW→ALLOW；CONSTRAIN/DENY→DENY；ASK→null"
+        },
+        "must_visit_consistent": {
+          "type": "boolean"
+        },
+        "must_visit_consistent_basis": {
+          "enum": ["self_consistency", "vs_spec"],
+          "description": "盲标阶段只能做自洽自评，填 self_consistency；看到 spec 后再与 spec 比对，填 vs_spec"
+        },
+        "layers": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["L1_task", "L2_field", "L3_record", "L4_action", "L5_param"],
+          "properties": {
+            "L1_task": {"$ref": "#/$defs/layer"},
+            "L2_field": {"$ref": "#/$defs/layer"},
+            "L3_record": {"$ref": "#/$defs/layer"},
+            "L4_action": {"$ref": "#/$defs/layer"},
+            "L5_param": {"$ref": "#/$defs/layer"}
+          }
+        },
+        "notes": {
+          "type": "string"
+        },
+        "missing_information": {
+          "type": ["string", "null"],
+          "description": "ASK 时必填，写缺失的用户身份/授权来源/歧义点"
+        },
+        "review_confidence": {
+          "enum": ["high", "medium", "low"]
+        },
+        "non_blind_reason": {
+          "type": "string",
+          "description": "review_mode=non_blind 时必填，写清何时看到了哪类结论"
+        },
+        "original_spec_checked": {
+          "enum": ["yes", "no", "unconfirmed"]
+        },
+        "confirmed_action": {
+          "$ref": "#/$defs/action",
+          "description": "D-003 补确认后的动作；只在盲标任务上使用"
+        },
+        "d3_confirmation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["confirmed_by", "confirmed_at", "confirmed_action", "basis"],
+          "properties": {
+            "confirmed_by": {"type": "string", "minLength": 1},
+            "confirmed_at": {"type": "string", "format": "date"},
+            "confirmed_action": {"$ref": "#/$defs/action"},
+            "basis": {"type": "string", "minLength": 1},
+            "evidence": {"type": "string"}
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {"expected_action": {"const": "ASK"}},
+            "required": ["expected_action"]
+          },
+          "then": {
+            "properties": {
+              "implementation_action": {"type": "null"},
+              "missing_information": {"type": "string", "minLength": 1}
+            },
+            "required": ["missing_information"]
+          }
+        },
+        {
+          "if": {
+            "properties": {"expected_action": {"const": "ALLOW"}},
+            "required": ["expected_action"]
+          },
+          "then": {
+            "properties": {"implementation_action": {"const": "ALLOW"}}
+          }
+        },
+        {
+          "if": {
+            "properties": {"expected_action": {"enum": ["CONSTRAIN", "DENY"]}},
+            "required": ["expected_action"]
+          },
+          "then": {
+            "properties": {"implementation_action": {"const": "DENY"}}
+          }
+        },
+        {
+          "if": {
+            "properties": {"review_mode": {"const": "non_blind"}},
+            "required": ["review_mode"]
+          },
+          "then": {
+            "required": ["non_blind_reason"]
+          }
+        }
+      ]
+    }
+  }
+}

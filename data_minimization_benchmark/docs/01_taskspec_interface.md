@@ -132,12 +132,25 @@ TaskSpec 是一条任务的「考卷＋答案」：用户要什么、以什么�
 
 ## 8. `expected_result`
 
-三个字段：`type`、`check`、`value`。
+三个字段：`type`、`check`、`value`。`value` **不得为 `null`**；空结果按类型写明确空值，不用 `null` 代替。
 
-- `type`：`table`、`record`、`scalar`、`list`、`structured_text`、`denial`；
-- `check`：`exact`（逐字一致）、`semantic`（语义一致）、`contains`（包含指定内容）、`property`（满足指定性质）；
-- `value`：标准答案本体，结构随 `type` 而定；个别任务附 `value_note` 说明口径（如 `scalar` 中 `row_count` 指参与计算的明细行数而非返回行数，或由单句原文拆出的要点按语义判定）。
-- 聚合类任务（DB-003、DB-007）的 `reference_sql` 含 `COUNT/SUM`，仅作 Ground Truth，不进 DataScope；聚合由消费方在已授权明细上自行计算。
+| `type` | `value` 结构 | 空值 / 缺省规则 | 可用 `check` |
+| --- | --- | --- | --- |
+| `table` | `{ "columns": string[], "row_count": int, "rows"?: scalar[][], "sum_amount"?: number, "boundary_row"?: scalar[], "note"?: string }` | 空结果必须写 `row_count: 0` + `columns`；`rows` 可省略或写 `[]`；`columns` 不能省 | `exact` |
+| `record` | `{ "<column>": scalar, ... }` | 只能对应 1 行；空结果不得用 `record`，改用 `table`（`row_count: 0`）/ `denial` / `ASK` | `exact`、`property` |
+| `scalar` | `{ "<metric>": number \| string, "note"?: string }` | 零值写 `0`，不写 `null`；没有数值结果时改用 `denial` / `ASK` | `exact`、`contains` |
+| `list` | `(string \| object)[]` | 空列表写 `[]` | `exact`、`semantic`、`contains` |
+| `structured_text` | `object \| (string \| object)[]` | 空内容写 `[]` 或对应字段的空数组；不用 `null` | `exact`、`semantic`、`contains` |
+| `denial` | `{ "action": "DENY" \| "ASK", "reason_contains": string[], "acceptable_alternative"?: string }` | `action`、`reason_contains` 必填；`reason_contains` 至少 1 条 | `semantic` |
+
+补充规则：
+
+1. `table` 的 `rows` 每行长度必须等于 `columns` 长度；单元格用 string / number / boolean，不用 `null`。`row_count` 是结果行数，不是参与聚合的明细行数——后者写进 `value_note`。
+2. `record` 的键必须是输出列名，值与 SQL 结果逐字段可比；不要把整行包成 `{"row": {...}}`。
+3. `scalar` 的键是答案指标名（如 `row_count`、`sum_amount`、`project_count`、`deadline`），不是列名；数值容差 0.01。
+4. `denial.action` 写**执行动作**：`DENY` 或 `ASK`。标注为 `CONSTRAIN` 的任务，这里写 `DENY`（v1.0 不做自动改写）；`ASK` 任务的 `reason_contains` 写缺失信息，不写拒绝理由。
+5. `value_note` 放在 `expected_result` 层，不放进 `value`；`note` 只作说明，不参与机判。
+6. 聚合类任务（DB-003、DB-007）的 `reference_sql` 含 `COUNT/SUM`，仅作 Ground Truth，不进 DataScope；聚合由消费方在已授权明细上自行计算。
 
 ## 9. `minimality`
 

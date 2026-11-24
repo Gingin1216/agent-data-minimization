@@ -31,3 +31,10 @@
 
 - `must_visit_consistent`：表/列/行范围是否与你的独立判断一致（单独算一致性，不与动作 κ 混算）。
 - 只需填判断结果；与 spec 一致的层写"一致"即可，不一致的层写你的判定 + 理由。
+
+## 通用规则与批量提交
+
+- 盲标材料清单、四动作判定、must/forbidden 重叠、非盲标记：见 `annotation/blind_review_guide.md`（不含任务答案）。
+- 批量提交用一个 `annotations.json`，正式 Schema `annotation/annotations.schema.json`，模板 `annotation/annotations.template.json`；每条 label 与上面的单任务模板同构。
+- 提交前运行 `python data_minimization_benchmark/scripts/check_annotations.py <annotations.json>`，通过后再交给 1 号拆分回 `review_round1/<task_id>.json`。
+- 盲标阶段 `must_visit_consistent_basis` 填 `self_consistency`；看到 spec 后再比对时填 `vs_spec`。
