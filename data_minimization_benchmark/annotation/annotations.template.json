@@ -1,0 +1,28 @@
+{
+  "schema_version": "annotations/1.0",
+  "reviewer": "member2",
+  "reviewed_at": "2026-11-24",
+  "task_count": 1,
+  "annotations": [
+    {
+      "task_id": "DB-099",
+      "reviewer": "member2",
+      "reviewed_at": "2026-11-24",
+      "review_mode": "blind",
+      "expected_action": "ALLOW",
+      "implementation_action": "ALLOW",
+      "must_visit_consistent": true,
+      "must_visit_consistent_basis": "self_consistency",
+      "layers": {
+        "L1_task": "一致",
+        "L2_field": "一致",
+        "L3_record": "一致",
+        "L4_action": "一致",
+        "L5_param": "一致"
+      },
+      "notes": "占位示例：DB-099 不是真实任务；提交时替换为真实 task_id 和判断值，一行一条 annotation。",
+      "missing_information": null,
+      "review_confidence": "high"
+    }
+  ]
+}

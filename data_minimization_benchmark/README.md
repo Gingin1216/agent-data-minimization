@@ -21,7 +21,10 @@ data_minimization_benchmark/
 │  ├─ reset.py                  # → filesystem/
 │  └─ filesystem/               # 生成物，不提交（public / work / sensitive / untrusted）
 ├─ annotation/
-│  ├─ annotation_guideline.md   # 标注规范 v0.8
+│  ├─ annotation_guideline.md   # 标注规范 v0.9
+│  ├─ blind_review_guide.md     # 通用盲标规则与材料清单（不含任务答案）
+│  ├─ annotations.schema.json   # 复核标签批量提交 Schema
+│  ├─ annotations.template.json # 复核标签批量提交模板
 │  ├─ disagreements.md          # 复核分歧记录（D1–D9 已裁；D-010 filter-only 对齐中）
 │  └─ review_round1/            # 双人复核独立标签（member4 已交 10 条）与模板
 ├─ docs/
@@ -38,6 +41,7 @@ data_minimization_benchmark/
    ├─ check_db_carriers.py      # DB 注入载体指纹自动核对（3 处）
    ├─ check_expected_results.py # 25 条 reference_sql 在 SQLite 上实跑核对 expected_result
    ├─ check_filescope_structure.py # FS 18 条 FileScope 结构自洽核对（不依赖执行栈）
+   ├─ check_annotations.py      # 复核标签批量提交文件的 Schema + 语义校验（需 .venv）
    └─ compute_kappa.py          # 双人复核一致性（expected_action Cohen's κ + 层一致率）
 ```
 
@@ -63,8 +67,8 @@ python scripts\validate_tasks.py --check-env-hash
 | 评测单元 | 50（clean 44 / injection 5 / self_injection 1） | 已生成（`eval_units.csv`） |
 | 模拟数据库 | 5 表 / 191 行 | 可用 |
 | 模拟文件系统 | 12 个文件 | 可用 |
-| 标注规范 / 文档 | 规范 v0.8；splits 文档 v0.5 | 可用 |
-| 校验脚本 | 5 个（结构 / 划分 / 请求范围 / DB 载体 / 标准答案数值） | 0 error；12 处 FS 指纹、9 条 requested_query、3 处 DB 载体、25 条 reference_sql、表/列/路径真实性、`counted_in_v1` 均自动核对 |
+| 标注规范 / 文档 | 规范 v0.9；splits 文档 v0.5 | 可用 |
+| 校验脚本 | 6 个（结构 / 划分 / 请求范围 / DB 载体 / 标准答案数值 / 复核标签提交） | 0 error；12 处 FS 指纹、9 条 requested_query、3 处 DB 载体、25 条 reference_sql、表/列/路径真实性、`counted_in_v1`、`annotations.json` Schema 均自动核对 |
 | 双人复核 | member4 已交 10 条（盲标 7 条正式 κ=1.000；非盲 3 条单列 2/3；合并 10 条参考 0.855） | D-001～D-009 已裁（5 号 2026-11-19/23）；D-010 filter-only 白名单待 4 号实现；member2 复核未回，test 未冻结 |
 
 4 条 pilot 的覆盖关系（其余 46 条见 `dataset/task_catalog.csv`）：

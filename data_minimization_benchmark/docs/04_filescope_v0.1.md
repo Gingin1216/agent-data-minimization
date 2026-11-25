@@ -1,4 +1,4 @@
-# FileScope 结构 v0.1（本组暂定，文档版次 v0.4）与计数口径
+# FileScope 结构 v0.1（本组暂定，文档版次 v0.4.2）与计数口径
 
 > 解决什么问题：`DataScope v1.0` 只覆盖「数据库单表 SELECT」，18 条文件系统任务（FS-001～FS-018）没有对应结构。若等组内拍板再动，1 号的 36 条任务集就卡在「有一半不能计数」的状态。
 > 折中做法：我方先定义一个与 `DataScope` 同构的最小结构 `FileScope v0.1`；命名与字段等 3 号确认后对齐。
@@ -11,11 +11,18 @@
 | 字段 | 类型 | 约束 | 对应 DataScope |
 | --- | --- | --- | --- |
 | `path` | str | 相对 `environment/filesystem/` 的路径；目录以 `/` 结尾 | `table` |
-| `operations` | list[str] | 取自 `LIST` / `READ` / `STAT`；本组不支持 `WRITE` / `DELETE` | `operation` |
+| `operations` | list[str] | 允许动作取自 `LIST` / `READ` / `STAT`；`forbidden_scope` 可写 `WRITE` / `DELETE` 等禁止反例，见下 | `operation` |
 | `content_part` | str | `full` / `first_lines` / `none`；`LIST`/`STAT` 用 `none` | `output_columns` 的粒度等价物 |
 | `max_bytes` | int | `READ` 时必填，正整数；`content_part=full` 时按文件大小封顶 | `max_rows` |
 | `content_sha256` | str | 16 位十六进制；`READ` 时必填，用于确认读到的是同一条内容 | 无（DataScope 无内容指纹） |
 | `recursive` | bool | 默认 `false`；目录级授权时显式声明 | 无 |
+
+**操作集合与执行层边界（2026-11-24 明确）**：
+
+- `FileScope` 的**允许操作集**只有 `LIST` / `READ` / `STAT`；`WRITE` / `DELETE` / `APPEND` / `MOVE` / `EXEC` 不是允许动作，不应出现在 `must_visit` / `may_visit` 中。
+- `forbidden_scope` 可以把 `DELETE` 等写操作当作**禁止反例**写出（FS-012 就是这样用的）；`check_filescope_structure.py` 对这类条目记 `OUT_OF_SUBSET`（超支持集反例，info），不报 error。它表示“这个动作被禁止”，不表示“标注层支持 DELETE”。
+- 执行层 v1.0 **不接纳 FileScope**，18 条 FS 任务全部在 `extension` 层；当前没有任何 FS 执行动作，`DELETE` 更不在支持范围。
+- 若未来任务确实需要把 `DELETE` 作为允许动作，属于 v1.1 的新操作语义，必须先改本文件与 3 号接口并重新论证最小权限模型；不能在现有 `must_visit` 里直接写 `DELETE` 绕过校验。
 
 不允许的写法（和 `DataScope` 一致）：通配符 `*`、`**`、绝对路径、`../` 跳出根目录、目录不写尾部 `/`。
 
@@ -80,3 +87,4 @@ tier=extension  → 18 条 FS 任务，单独出数，等 v1.1 的 FileScope
 | 2026-11-13 | 初版：定义 FileScope v0.1，确定「36 条全部计入 + tier 回退」的折中口径 |
 | 2026-11-17 | v0.4：3 号 v1.0 不接纳 FileScope（统一对接文档 TG-DS-INT-001 v0.1），按 §5 执行回退；FS 18 条转 extension，`counted_in_v1=17/36`，登记核心集不足 30 条下限与 test 核心子集正常类为 0 两个待确认代价 |
 | 2026-11-19 | v0.4.1：扩充 14 条 DB 任务后核心 32 条、计入 31 条，30 条下限与 test 正常类为 0 两项回退代价闭环 |
+| 2026-11-24 | v0.4.2：§1 明确允许操作集只有 LIST/READ/STAT；WRITE/DELETE/APPEND/MOVE/EXEC 只能作 `forbidden_scope` 的禁止反例，checker 记 `OUT_OF_SUBSET` info；执行层 v1 无 FS 支持；回答 2 号 DELETE 口径，对齐 FS-012 机检口径 |
