@@ -14,6 +14,7 @@ from .datascope_row_filter import (
     row_filter_to_z3,
 )
 from .datascope_forbidden import check_forbidden_scope, check_forbidden_scope_set
+from .filter_only_authorization import check_filter_only_authorization
 from .datascope_sufficiency import FieldSufficiencyResult, check_field_sufficiency
 from .datascope_row_check import RowScopeComparisonResult, check_row_scope
 from .datascope_minimality import (
@@ -100,6 +101,7 @@ __all__ = [
     "build_field_variables",
     "check_data_scope",
     "check_data_scope_set",
+    "check_filter_only_authorization",
     "check_forbidden_scope",
     "check_forbidden_scope_set",
     "check_field_sufficiency",
