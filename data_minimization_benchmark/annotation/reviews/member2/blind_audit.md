@@ -14,26 +14,42 @@ generic_guideline.md 未找到，采用包中实际提供的通用节选。节�
 
 |任务|review_mode|独立证据|
 |---|---|---|
-|task_01|blind|任务 JSON、项目计划、README 权限说明|
-|task_02|blind|任务 JSON、邮件、README 权限说明|
-|task_03|blind|任务 JSON、报销候选记录|
-|task_04|blind|任务 JSON、报销候选记录|
-|task_05|blind|任务 JSON、报销候选记录|
-|task_06|blind|任务 JSON、CSV、README 权限说明|
-|task_07|blind|任务 JSON、日志候选记录|
-|task_08|blind|任务 JSON、项目计划、README 权限说明|
+|task_01|non_blind|任务 JSON、项目计划、README 权限说明|
+|task_02|non_blind|任务 JSON、邮件、README 权限说明|
+|task_03|non_blind|任务 JSON、报销候选记录|
+|task_04|non_blind|任务 JSON、报销候选记录|
+|task_05|non_blind|任务 JSON、报销候选记录|
+|task_06|non_blind|任务 JSON、CSV、README 权限说明|
+|task_07|non_blind|任务 JSON、日志候选记录|
+|task_08|non_blind|任务 JSON、项目计划、README 权限说明|
 
 八题均以 self_consistency 评估。逐题缺失授权前提见 annotations.json。03–05 的输入与证据相同，按同一证据独立得出相同判断。07 的近期边界未定义，日志授权缺失足以拒绝。
 
-按包 README 保留中性编号。官方 Schema 校验发现 8 处错误，详细路径如下：
+## 独立性与归档口径修正
 
-- annotations.0.task_id 'task_01' does not match '^(DB|FS)-[0-9]{3}$'
-- annotations.1.task_id 'task_02' does not match '^(DB|FS)-[0-9]{3}$'
-- annotations.2.task_id 'task_03' does not match '^(DB|FS)-[0-9]{3}$'
-- annotations.3.task_id 'task_04' does not match '^(DB|FS)-[0-9]{3}$'
-- annotations.4.task_id 'task_05' does not match '^(DB|FS)-[0-9]{3}$'
-- annotations.5.task_id 'task_06' does not match '^(DB|FS)-[0-9]{3}$'
-- annotations.6.task_id 'task_07' does not match '^(DB|FS)-[0-9]{3}$'
-- annotations.7.task_id 'task_08' does not match '^(DB|FS)-[0-9]{3}$'
+Work A 与 Work B 是分离执行的；本次非盲归档原因不是两者分离失败。正式标注前，Work B 在同一会话上下文中继承了这8道题的自身初判，并已接触50条原始任务的总体动作分布。因此本批8条统一按 `non_blind` 描述性样本保留，不计入正式盲标 Cohen's Kappa（κ），不需要重新标注。
 
-包 README 将原始编号对齐和官方脚本校验交给协调人。未运行 scripts/check_annotations.py，提交未正式通过。未访问内部映射或原始标注。
+7条 ASK、1条 DENY、五层标注及其原始判断理由全部保留。部分材料缺E001可信部门信息，或缺正式FileScope角色/路径授权基线；逐条适用情况见 annotations.json 的 non_blind_reason。DB-012 的 DENY 依据经理基线无 access_log 权限，不以部门或文件授权缺失作为该题判断依据。
+
+## 正式编号映射与Schema校验
+
+下表沿用已有正式编号映射，不重新生成映射：
+
+|packet编号|正式task_id|
+|---|---|
+|task_01|FS-014|
+|task_02|FS-002|
+|task_03|DB-002|
+|task_04|DB-015|
+|task_05|DB-014|
+|task_06|FS-015|
+|task_07|DB-012|
+|task_08|FS-001|
+
+1号已复核运行官方 `check_annotations.py`，确认8/8条通过官方校验，task_id均为正式FS/DB编号。本次仅保留1号已完成的校验事实，没有声称本次重新运行官方检查器。
+
+**task_01..08 已映射为正式 FS/DB 编号，旧错误不再适用。** 旧版本8处task_id格式错误记录已从当前审计正文删除，历史记录仍由Git保留。
+
+## 验收与后续
+
+本批不计入正式κ；正式κ仍以4号确认的7条样本为准，由1号维护和复算。不重新计算κ、不开展新盲标、不向1号承诺补做。PR #23已合并，本次通过独立修正PR更新这两个文件，等待1号验收及组长决定合并，不自行合并。
