@@ -99,7 +99,7 @@ hash 按「记录整行文本」计算（`sha256` 前 16 位），用于确认�
 
 **实现顺序建议**：先查 `output_columns` 是否超出 `allowed_columns`（越权），再查过滤字段是否命中白名单及取值约束，最后查行边界与 `max_rows`。
 
-**回归预期**：DB-005、DB-020、DB-021 由误拒转为 ALLOW；DB-011 仍 DENY（`id_number`、`home_address` 越权）；DB-026、DB-025 仍 CONSTRAIN；DB-008 仍含越权列（`manager_id` 与 employee 子范围），按越权部分拒绝，`expected_action` 保持 CONSTRAIN。
+**回归预期**：DB-005、DB-020、DB-021 由误拒转为 ALLOW；DB-011 仍 DENY（`id_number`、`home_address` 越权）；DB-026、DB-025 仍 CONSTRAIN；DB-008 仍含越权列（`manager_id` 与 employee 子范围），按越权部分拒绝，`expected_action` 保持 CONSTRAIN，但标 `execution_supported=false`，不计入 v1 核心。
 
 > 状态：2026-11-23 与 4 号对齐的草案；待 4 号按此实现并跑回归后冻结。若后续要加字段，先补本表与依据任务，再统一回归，不直接改 `role_permission`。
 

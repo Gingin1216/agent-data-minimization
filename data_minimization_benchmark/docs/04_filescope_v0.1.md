@@ -1,8 +1,8 @@
-# FileScope 结构 v0.1（本组暂定，文档版次 v0.4.2）与计数口径
+# FileScope 结构 v0.1（本组暂定，文档版次 v0.4.3）与计数口径
 
 > 解决什么问题：`DataScope v1.0` 只覆盖「数据库单表 SELECT」，18 条文件系统任务（FS-001～FS-018）没有对应结构。若等组内拍板再动，1 号的 36 条任务集就卡在「有一半不能计数」的状态。
 > 折中做法：我方先定义一个与 `DataScope` 同构的最小结构 `FileScope v0.1`；命名与字段等 3 号确认后对齐。
-> 状态：**已回退（2026-11-17）**。第三组《统一对接文档》（TG-DS-INT-001 v0.1）明确 FileScope 与文件系统访问保护暂不纳入 v1、暂缓至 v1.1，`authorized_file_scopes` 保持空元组。已按 §5 执行回退：`splits.csv` / `eval_units.csv` 增加 `tier` 列，18 条 FS 任务全部转入 `extension`，v1 硬指标分母为 17 条 DB 核心任务（18 条减去 `DB-003`）。本文件转为 v1.1 的对接底稿，FS 任务与标注本身不变。
+> 状态：**已回退（2026-11-17）**。第三组《统一对接文档》（TG-DS-INT-001 v0.1）明确 FileScope 与文件系统访问保护暂不纳入 v1、暂缓至 v1.1，`authorized_file_scopes` 保持空元组。已按 §5 执行回退：`splits.csv` / `eval_units.csv` 增加 `tier` 列，18 条 FS 任务全部转入 `extension`，v1 硬指标分母为 30 条 DB 核心任务（32 条 core 减去 `DB-003`、`DB-008`）。本文件转为 v1.1 的对接底稿，FS 任务与标注本身不变。
 
 ## 1. 结构定义
 
@@ -53,9 +53,9 @@ DB 任务用 `must_visit.datascope[]`；FS 任务用 `must_visit.paths[]`（字�
 
 | 层 | 任务数 | 计入 `counted_in_v1` | 结构 | 说明 |
 | --- | --- | --- | --- | --- |
-| 数据库 | 18 | 17 | `DataScope v1.0`（3 号已冻结） | `DB-003` 需 `SUM` 聚合，标 `execution_supported=false`，只进任务集、不计入运行时判定指标 |
-| 文件系统 | 18 | 18 | `FileScope v0.1`（本组暂定） | `FS-013`/`FS-018` 标注「结构缺口」，判定按 §3 的人工规则 |
-| 合计 | 36 | **35** | — | 仍满足 30–60 条下限 |
+| 数据库 | 32 | 30 | `DataScope v1.0`（3 号已冻结） | `DB-003` 需 `SUM` 聚合，`DB-008` 需多步执行且授权基线未满足；两条标 `execution_supported=false`，只进任务集、不计入运行时判定指标 |
+| 文件系统 | 18 | 0 | `FileScope v0.1`（本组暂定） | 18 条全部转 `extension`，等 v1.1；`FS-013`/`FS-018` 判定按 §3 的人工规则 |
+| 合计 | 50 | **30** | — | 仍满足 30 条下限（无余量） |
 
 `counted_in_v1` 不是人工填的：`scripts/build_splits.py` 从 spec 的 `execution_supported`（缺省为真）推出，`validate_tasks.py` 会核对它与 splits.csv 一致，写死会报错。
 
@@ -70,10 +70,10 @@ tier=core       → 18 条 DB 任务，参与 v1 硬指标与误报/漏报分母
 tier=extension  → 18 条 FS 任务，单独出数，等 v1.1 的 FileScope
 ```
 
-执行记录（2026-11-17）：`build_splits.py` 生成 `tier` 列，`counted_in_v1 = tier=core 且 execution_supported != false`；`validate_tasks.py` 同步核对。回退后 `counted_in_v1 = 17/36`，各 split 计入数为 smoke 7 / dev 3 / test 7。回退代价（2026-11-19 已闭环）：
+执行记录（2026-11-17）：`build_splits.py` 生成 `tier` 列，`counted_in_v1 = tier=core 且 execution_supported != false`；`validate_tasks.py` 同步核对。当前 `counted_in_v1 = 30/50`，各 split 计入数为 smoke 9 / dev 9 / test 12。回退代价（2026-11-19 已闭环，2026-11-26 更新）：
 
-1. **核心集不足课题"任务数 ≥30"下限** → 已扩 14 条 DB 任务（DB-019～DB-032，normal 5 / over 3 / unauthorized 3 / boundary 3），核心 32 条、计入 31 条，达下限并留 1 条余量。
-2. **test 核心子集正常类为 0** → 扩充后 test 核心 13 条，含 normal 2（DB-020、DB-023），误报率可算。
+1. **核心集不足课题"任务数 ≥30"下限** → 已扩 14 条 DB 任务（DB-019～DB-032，normal 5 / over 3 / unauthorized 3 / boundary 3），核心 32 条；2026-11-26 扣除 `DB-003`、`DB-008` 后计入 30 条，达到下限（无余量）。
+2. **test 核心子集正常类为 0** → 扩充后 test 核心 12 条，含 normal 2（DB-020、DB-023），误报率可算。
 
 ## 6. 给 3 号的两个具体问题（不阻塞）
 
@@ -88,3 +88,4 @@ tier=extension  → 18 条 FS 任务，单独出数，等 v1.1 的 FileScope
 | 2026-11-17 | v0.4：3 号 v1.0 不接纳 FileScope（统一对接文档 TG-DS-INT-001 v0.1），按 §5 执行回退；FS 18 条转 extension，`counted_in_v1=17/36`，登记核心集不足 30 条下限与 test 核心子集正常类为 0 两个待确认代价 |
 | 2026-11-19 | v0.4.1：扩充 14 条 DB 任务后核心 32 条、计入 31 条，30 条下限与 test 正常类为 0 两项回退代价闭环 |
 | 2026-11-24 | v0.4.2：§1 明确允许操作集只有 LIST/READ/STAT；WRITE/DELETE/APPEND/MOVE/EXEC 只能作 `forbidden_scope` 的禁止反例，checker 记 `OUT_OF_SUBSET` info；执行层 v1 无 FS 支持；回答 2 号 DELETE 口径，对齐 FS-012 机检口径 |
+| 2026-11-26 | v0.4.3：DB-008 标 `execution_supported=false`；v1 核心计数由 31/50 改为 30/50（32 条 DB 核心减去 `DB-003`、`DB-008`），test 核心 13→12，仍达 30 条下限（无余量） |

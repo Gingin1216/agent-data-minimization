@@ -78,6 +78,8 @@
 
   "expected_action": "CONSTRAIN",
   "implementation_action": "DENY",
+  "execution_supported": false,
+  "execution_note": "v1 运行时暂不支持：JOIN 解析被拒，且两条 DataScope 需要两次 company_db_query；同时 department_manager 无 employee 表授权、project 不含 manager_id。按 spec-only 保留，不计入 v1 核心；3 号支持多步与任务级授权后再评估恢复。",
   "expected_action_note": "跨表方向正确，但连带读取了员工敏感列；按 DataScope v1.0 拒绝越界部分并返回原因",
 
   "expected_result": {

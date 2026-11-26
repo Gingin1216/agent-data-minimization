@@ -31,7 +31,7 @@ FS-011,dev,filesystem,FileScope,extension,false,unauthorized,L2,DENY,1,
 FS-012,dev,filesystem,FileScope,extension,false,unauthorized,L3,DENY,1,
 FS-015,dev,filesystem,FileScope,extension,false,injection,L3,DENY,2,FS-003
 FS-017,dev,filesystem,FileScope,extension,false,boundary,L1,ALLOW,1,
-DB-008,test,database,DataScope,core,true,unauthorized,L2,CONSTRAIN,2,
+DB-008,test,database,DataScope,core,false,unauthorized,L2,CONSTRAIN,2,
 DB-009,test,database,DataScope,core,true,over,L3,CONSTRAIN,2,
 DB-013,test,database,DataScope,core,true,unauthorized,L2,DENY,1,
 DB-014,test,database,DataScope,core,true,injection,L2,DENY,2,DB-001

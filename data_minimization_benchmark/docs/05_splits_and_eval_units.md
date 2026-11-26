@@ -1,7 +1,7 @@
-# 任务集划分与评测单元 v0.5
+# 任务集划分与评测单元 v0.6
 
-> 文档版本 v0.5（划分规则见 §2，单元类型见 §3.1；2026-11-17 起执行 FileScope 回退，2026-11-19 扩充 14 条 DB 任务）。
-> 产出：`dataset/splits.csv`（50 条任务 → split + tier，其中 31 条 `counted_in_v1=true`）、`dataset/eval_units.csv`（50 个评测单元，含 tier）
+> 文档版本 v0.6（划分规则见 §2，单元类型见 §3.1；2026-11-17 起执行 FileScope 回退，2026-11-19 扩充 14 条 DB 任务；2026-11-26 DB-008 因执行器与授权基线未满足，转 spec-only，不计入 v1 核心）。
+> 产出：`dataset/splits.csv`（50 条任务 → split + tier，其中 30 条 `counted_in_v1=true`）、`dataset/eval_units.csv`（50 个评测单元，含 tier）
 > 生成方式：`python scripts\build_splits.py`（划分写死在脚本里，改划分要改脚本，避免 CSV 手改后与 spec 脱节）
 > 消费方：2 号（指标与实验矩阵）、5 号（策略生成与更新）、3 号（运行时判定）
 
@@ -19,8 +19,8 @@
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | smoke | 13 | 6 | 3 | 1 | 1 | 2 | 9 | 覆盖 `ALLOW` 9 / `CONSTRAIN` 1 / `DENY` 3，两类场景都有 |
 | dev | 19 | 3 | 1 | 4 | 9 | 2 | 9（DB-003 不计） | 越权为主，用于抠策略规则 |
-| test | 18 | 4 | 2 | 3 | 4 | 5 | 13 | 五类各 ≥2，均衡 |
-| 合计 | 50 | 13 | 6 | 8 | 14 | 9 | 31 | — |
+| test | 18 | 4 | 2 | 3 | 4 | 5 | 12（DB-008 不计） | 五类各 ≥2，均衡 |
+| 合计 | 50 | 13 | 6 | 8 | 14 | 9 | 30 | — |
 
 两条划分约束：
 
@@ -35,7 +35,7 @@
 
 - `splits.csv` 与 `eval_units.csv` 均增加 `tier` 列：`core` = DB 任务，`extension` = 18 条 FS 任务（单独出数，等 v1.1）。
 - `counted_in_v1 = tier=core 且 execution_supported != false`，由 `build_splits.py` 生成、`validate_tasks.py` 逐行核对，不能手改。
-- 回退时 `counted_in_v1 = 17/36`；2026-11-19 扩充 14 条 DB 任务（DB-019～DB-032，全部单表 SELECT、可执行）后为 **31/50**（32 条 DB 核心减去 `DB-003`），各 split 计入数为 smoke 9 / dev 9 / test 13。
+- 回退时 `counted_in_v1 = 17/36`；2026-11-19 扩充 14 条 DB 任务（DB-019～DB-032，全部单表 SELECT、可执行）后为 **30/50**（32 条 DB 核心减去 `DB-003` 与 `DB-008`），各 split 计入数为 smoke 9 / dev 9 / test 12。
 
 ## 3. 评测单元（50 个）
 
@@ -76,11 +76,11 @@ agentdojo 的评测单元也是 `(user_task, injection_task)`，所以本组的 
 
 ## 5. 已知限制
 
-1. test 核心子集 13 条（normal 2 / injection 2 / over 2 / unauthorized 3 / boundary 4），单类 2～4 条；算误报率时 0.1% 的分母仍不够（B4 已提），需要**多次重复**或在 2 号侧合并公开集扩分母。建议合并公开集支撑硬声明、自建集只承担定向覆盖并报置信区间，待 2 号确认。
-2. `DB-003`（聚合）在 dev，实际不执行，只作占位；它不进 test 是为了避免「测一条跑不动的任务」。
+1. test 核心子集 12 条（normal 2 / injection 2 / over 2 / unauthorized 2 / boundary 4），单类 2～4 条；算误报率时 0.1% 的分母仍不够（B4 已提），需要**多次重复**或在 2 号侧合并公开集扩分母。建议合并公开集支撑硬声明、自建集只承担定向覆盖并报置信区间，待 2 号确认。
+2. `DB-003`（聚合）在 dev，实际不执行，只作占位；`DB-008`（跨表多步 + 授权基线未满足）在 test，但标 `execution_supported=false`，不计入 v1 核心；两条都保留任务集与标注。
 3. `FS-013`（跨部门同一文件）与 `FS-018`（非 ASCII 路径）在 test，但二者的判定依赖人工规则（`GAP-FS-01/02`），出数时要单独标注，不能与 DB 任务混算。
-4. ~~FileScope 回退后核心集 17 条不足 30 条下限~~ → **已解决**：2026-11-19 扩充 14 条 DB 任务（DB-019～DB-032），核心 32 条、计入 31 条，达课题 30 条下限并留 1 条余量。
-5. ~~test 核心子集正常类为 0~~ → **已解决**：扩充后 test 核心 13 条，含 normal 2（DB-020、DB-023），可计算正常类误报率。
+4. ~~FileScope 回退后核心集 17 条不足 30 条下限~~ → **已解决**：2026-11-19 扩充 14 条 DB 任务（DB-019～DB-032），核心 32 条；2026-11-26 扣除 `DB-003`、`DB-008` 后计入 30 条，达到课题 30 条下限（无余量）。
+5. ~~test 核心子集正常类为 0~~ → **已解决**：扩充后 test 核心 12 条，含 normal 2（DB-020、DB-023），可计算正常类误报率。
 
 ## 6. 变更记录
 
@@ -90,3 +90,4 @@ agentdojo 的评测单元也是 `(user_task, injection_task)`，所以本组的 
 | 2026-11-13 | v0.3：单元类型拆成 clean / injection / self_injection 三种（FS-002 归 self_injection）；`counted_in_v1` 改由 `execution_supported` 推出，35/36 计入；新增 `expected_action_injected` 列 |
 | 2026-11-17 | v0.4：归类修正后分布同步（正常 8 / 注入 6 / 过度 5 / 越权 11 / 边界 6）；执行 FileScope 回退，新增 `tier` 列，`counted_in_v1 = core 且 execution_supported`，17/36 计入；登记核心集不足 30 条下限与 test 核心子集正常类为 0 两项待确认代价 |
 | 2026-11-19 | v0.5：扩充 14 条 DB 任务（DB-019～DB-032，normal 5 / over 3 / unauthorized 3 / boundary 3），任务集 50 条、评测单元 50 个；分布 13/6/8/14/9；计入 v1 31/50，核心 32 条达 30 条下限；test 核心 13 条、normal 2，两项代价关闭 |
+| 2026-11-26 | v0.6：DB-008 因 JOIN 解析、两条 DataScope 多步执行与授权基线未满足，标 `execution_supported=false`；计入 v1 30/50，smoke 9 / dev 9 / test 12，test 核心 12 条；仍达 30 条下限（无余量） |
