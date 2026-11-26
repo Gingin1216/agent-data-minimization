@@ -5,7 +5,8 @@ from uuid import uuid4
 from copy import deepcopy
 from typing import Any, Mapping, Optional, Tuple
 
-from .datascope_check import ScopeCheckStatus, check_data_scope_set
+from .datascope_check import ScopeCheckStatus
+from .filter_only_authorization import check_filter_only_authorization
 from .datascope_v1 import DataScope
 from .policy_record import PolicySession, get_authorization_snapshot
 from .sql_to_scope import sql_to_scope
@@ -74,6 +75,7 @@ def check_database_access(
     elif snapshot.session_id != session.session_id or snapshot.task_id != session.task_id:
         raise ValueError("Snapshot does not belong to the task session.")
     authorized = snapshot.authorized_data_scopes
+    user_identity = deepcopy(session.user_identity)
     requested = ()
 
     def decision(status, code, message):
@@ -111,19 +113,26 @@ def check_database_access(
     requested = (extracted.scope,)
     if not authorized:
         return decision(ScopeCheckStatus.VIOLATED, "missing_data_scope", "No database scope is authorized.")
-    result = check_data_scope_set(requested, authorized, field_types_by_table)
-    if comparator is None:
-        try:
-            from .task_scope_comparator import compare_task_scopes
-            comparator = compare_task_scopes
-        except ImportError:
-            return decision(ScopeCheckStatus.UNKNOWN, "comparator_unavailable", "Task scope comparator is unavailable.")
+    result = check_filter_only_authorization(
+        requested, authorized, field_types_by_table, user_identity=user_identity)
     try:
+        from .task_scope_comparator import compare_task_scopes
+    except ImportError:
+        compare_task_scopes = None
+    if comparator is None:
+        if compare_task_scopes is None:
+            return decision(ScopeCheckStatus.UNKNOWN, "comparator_unavailable", "Task scope comparator is unavailable.")
+        comparator = compare_task_scopes
+    try:
+        # Preserve the existing injected-comparator contract; only the built-in
+        # comparator consumes host identity, never tool arguments or SQL text.
+        identity_args = {"user_identity": user_identity} if comparator is compare_task_scopes else {}
         comparison = comparator(
             requested_scopes=requested, authorized_scopes=authorized,
             forbidden_scopes=snapshot.forbidden_data_scopes,
             required_scopes=snapshot.required_data_scopes,
             field_types_by_table=field_types_by_table,
+            **identity_args,
         )
         if not isinstance(comparison, TaskScopeComparison):
             raise TypeError("Expected TaskScopeComparison.")

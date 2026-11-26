@@ -2,18 +2,22 @@
 
 Task checks accept exactly one requested and one required scope. Authorization
 and forbidden checks retain their existing collection semantics. No SQL is
-executed, no inputs are repaired, and no task requirements are inferred here.
+executed or input mutated. Explicit trusted filter-only rules can supply read
+dependencies already present in each scope's own predicate.
 """
 from __future__ import annotations
 
 from collections.abc import Mapping
 
-from .datascope_check import ScopeCheckResult, ScopeCheckStatus, check_data_scope_set
+from .datascope_check import ScopeCheckResult, ScopeCheckStatus
 from .datascope_forbidden import check_forbidden_scope_set
 from .datascope_minimality import check_field_minimality, find_extra_fields
 from .datascope_row_check import check_row_scope
 from .datascope_sufficiency import check_field_sufficiency
 from .datascope_v1 import DataScope
+from .filter_only_authorization import (
+    check_filter_only_authorization, scope_with_filter_dependencies,
+)
 from .runtime_authorization import TaskScopeComparison
 
 
@@ -37,10 +41,11 @@ def _field_result(sufficiency, missing, kind):
 
 
 def compare_task_scopes(*, requested_scopes, authorized_scopes, forbidden_scopes,
-                        required_scopes, field_types_by_table) -> TaskScopeComparison:
+                        required_scopes, field_types_by_table, user_identity=None) -> TaskScopeComparison:
     """Return real, independent results using existing checks.
 
-    read/output sufficiency refers to explicit required field lists. The
+    Read sufficiency includes explicit trusted filter-only dependencies;
+    output sufficiency refers to explicit required output fields. The
     field_minimality item retains FieldMinimalityResult, including deletion
     and final-recheck evidence (the handoff contract accepts result objects).
 
@@ -54,9 +59,13 @@ def compare_task_scopes(*, requested_scopes, authorized_scopes, forbidden_scopes
     Empty required scopes are not interpreted as a no-data-needed task. Empty
     forbidden scopes mean a caller-supplied empty collection; trusted policy
     initialization remains the host's responsibility.
+
+    Optional user_identity must come from the trusted host. It enables only the
+    four company filter-only rules and explicit REQUIRED predicate dependencies;
+    omitted identity preserves strict legacy behavior. No TaskSpec is mutated.
     """
-    authorization = check_data_scope_set(requested_scopes, authorized_scopes,
-                                         field_types_by_table)
+    authorization = check_filter_only_authorization(
+        requested_scopes, authorized_scopes, field_types_by_table, user_identity=user_identity)
     forbidden = check_forbidden_scope_set(requested_scopes, forbidden_scopes,
                                           field_types_by_table)
 
@@ -79,6 +88,10 @@ def compare_task_scopes(*, requested_scopes, authorized_scopes, forbidden_scopes
                 raise ValueError("Each task scope must be a DataScope or mapping.")
             scopes.append(DataScope.model_validate(dict(value)))
         requested, required = scopes
+        # TaskSpec may omit execution-only fields from its read list. Only the
+        # explicit host-bound whitelist can supply these REQUIRED dependencies.
+        requested = scope_with_filter_dependencies(requested, user_identity)
+        required = scope_with_filter_dependencies(required, user_identity)
     except (TypeError, ValueError) as exc:
         return unsupported("invalid_task_scope", f"Task scope validation failed: {exc}")
 
