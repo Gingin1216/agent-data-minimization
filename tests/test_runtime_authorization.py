@@ -90,7 +90,7 @@ def test_stale_model_candidate_cannot_publish(dynamic):
 def test_db001_passes_and_denies_extra_column_before_sqlite_executes():
     session = db001_session()
     sql_suffix = " FROM expense WHERE department = ? AND expense_date >= ? AND expense_date <= ? LIMIT ?"
-    params = ["RND", "2026-11-01", "2026-11-30", 20]
+    params = ["RND", "2026-11-01", "2026-11-30", session.authorized_data_scopes[0].max_rows]
     allowed_args = {"sql": "SELECT expense_date, amount" + sql_suffix, "params": params}
     denied_args = {"sql": "SELECT expense_date, amount, remark" + sql_suffix, "params": params}
     with sqlite3.connect(":memory:") as database:

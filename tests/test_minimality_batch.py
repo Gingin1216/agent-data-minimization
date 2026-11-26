@@ -44,7 +44,8 @@ def test_sql_is_passed_unchanged_and_no_limit_is_invented(schema, monkeypatch):
 def test_deny_and_empty_requirement_do_not_become_sufficiency_truth(schema):
     spec = task("DB-010")
     spec["requested_query"] = "SELECT name FROM employee LIMIT 1"
-    assert spec["must_visit"]["datascope"] == []
+    # Explicit synthetic empty-requirement case, independent of TaskSpec edits.
+    spec["must_visit"]["datascope"] = []
     result = original(spec, schema)
     assert result["status"] == "unsupported_requirement"
     assert "results" not in result

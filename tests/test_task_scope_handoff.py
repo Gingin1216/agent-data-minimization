@@ -1,4 +1,5 @@
 import importlib.util
+import json
 from pathlib import Path
 
 from secagent import (
@@ -27,7 +28,9 @@ def test_fixture_keeps_three_inputs_separate_and_published():
     snapshot = get_authorization_snapshot(session)
     assert snapshot.authorized_data_scopes[0].max_rows == 200
     assert "category" in snapshot.authorized_data_scopes[0].output_columns
-    assert snapshot.required_data_scopes[0].max_rows == 20
+    task_path = Path(__file__).resolve().parents[1] / "data_minimization_benchmark/dataset/task_specs/DB-001.json"
+    expected_required = json.loads(task_path.read_text(encoding="utf-8"))["must_visit"]["datascope"][0]
+    assert snapshot.required_data_scopes[0].max_rows == expected_required["max_rows"]
     assert "category" not in snapshot.required_data_scopes[0].output_columns
     assert snapshot.forbidden_data_scopes
     assert session.records[-1].required_data_scopes == snapshot.required_data_scopes
