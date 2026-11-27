@@ -12,6 +12,8 @@ from typing import Any, Mapping, Optional
 
 import z3
 
+from ._z3_strings import string_literal
+
 
 class RowFilterError(Exception):
     """Raised when a RowFilter cannot be translated into the supported model."""
@@ -145,7 +147,7 @@ def _literal(value: Any, field_type: str) -> z3.ExprRef:
             raise RowFilterError(
                 f"Expected string value for field type 'string', got {value!r}"
             )
-        return z3.StringVal(value)
+        return string_literal(value)
     if field_type == "integer":
         if not isinstance(value, int) or isinstance(value, bool):
             raise RowFilterError(

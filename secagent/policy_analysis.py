@@ -4,6 +4,7 @@ import sys
 from jsonschema import Draft202012Validator
 from z3 import *
 
+from ._z3_strings import string_literal
 from .role_analyzer import regex_to_z3_expr_search
 
 # Define a global Z3 datatype for null.
@@ -96,17 +97,7 @@ def _literal_constraint(var, value):
     if isinstance(value, bool):
         return var == BoolVal(value) if sort == BoolSort() else BoolVal(False)
     if isinstance(value, str):
-        if sort != StringSort():
-            return BoolVal(False)
-        if any(ord(character) > 0x2FFFF for character in value):
-            raise NotImplementedError("String literal exceeds the Z3 Unicode alphabet")
-        # Z3 interprets Unicode escapes in StringVal. Insert literal backslashes
-        # as characters so that a JSON string containing an escape stays literal.
-        parts = value.split("\\")
-        literal = StringVal(parts[0])
-        for part in parts[1:]:
-            literal = Concat(literal, Unit(CharVal("\\")), StringVal(part))
-        return var == literal
+        return var == string_literal(value) if sort == StringSort() else BoolVal(False)
     if isinstance(value, (int, float)):
         if isinstance(value, float) and value.is_integer():
             value = int(value)

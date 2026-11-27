@@ -1,3 +1,5 @@
+import pytest
+
 from secagent import (
     DataScope,
     ScopeCheckStatus,
@@ -6,6 +8,7 @@ from secagent import (
     check_data_scope_set,
     sql_to_scope,
 )
+from secagent.datascope_row_check import check_row_scope
 
 
 FIELD_TYPES = {
@@ -176,3 +179,19 @@ def test_missing_limit_is_not_replaced_with_a_default():
     assert parsed.scope is None
     assert parsed.reason is not None
     assert "LIMIT" in parsed.reason
+
+
+@pytest.mark.parametrize("operator", ["eq", "in"])
+def test_row_predicates_preserve_literal_string_contents(operator):
+    literal = r"\u{41}"
+    operand = {"value": literal} if operator == "eq" else {"values": [literal]}
+    requested = make_scope(row_filter={"op": operator, "field": "department", **operand})
+    equivalent = make_scope(row_filter={"op": "eq", "field": "department", "value": literal})
+    different = make_scope(row_filter={"op": "eq", "field": "department", "value": "A"})
+    assert check_row_scope(requested, equivalent, FIELD_TYPES).status is ScopeCheckStatus.PROVED
+    assert check_row_scope(requested, different, FIELD_TYPES).status is ScopeCheckStatus.VIOLATED
+
+
+def test_string_outside_z3_alphabet_cannot_prove_authorization():
+    scope = make_scope(row_filter={"op": "eq", "field": "department", "value": "\U0010ffff"})
+    assert check_data_scope(scope, scope, FIELD_TYPES).status is ScopeCheckStatus.UNKNOWN
