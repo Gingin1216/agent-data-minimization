@@ -51,40 +51,51 @@ ARRAY_WRAPPER_ACCESSORS = {
 }
 
 
-def make_array_from_list(lst, ArrayWrapper):
-    """
-    Given a Python list and an element type (one of "string", "integer", "number", "boolean", "null"),
-    return a Z3 array (of type Array(Int, T)) mapping indices 0..len(lst)-1 to the corresponding values.
-    """
-    if ArrayWrapper == ArrayWrapper_string:
-        default_val = StringVal("")
-        def convert(x): return StringVal(x)
-    elif ArrayWrapper == ArrayWrapper_integer:
-        default_val = IntVal(0)
-        def convert(x): return IntVal(x)
-    elif ArrayWrapper == ArrayWrapper_number:
-        default_val = RealVal(0)
-        def convert(x): return RealVal(x)
-    elif ArrayWrapper == ArrayWrapper_boolean:
-        default_val = BoolVal(False)
-        def convert(x): return BoolVal(x)
-    elif ArrayWrapper == ArrayWrapper_null:
-        default_val = NullType.null
-        def convert(x): return NullType.null
-    else:
-        raise NotImplementedError
-    default_arr = K(IntSort(), default_val)  # default value
-    arr_term = default_arr
-    for i, elem in enumerate(lst):
-        arr_term = Store(arr_term, i, convert(elem))
-    return arr_term
+def _literal_constraint(var, value):
+    """Match a JSON value without coercing it to a different Z3 sort."""
+    sort = var.sort()
+    if value is None:
+        return var == NullType.null if sort == NullType else BoolVal(False)
+    if isinstance(value, bool):
+        return var == BoolVal(value) if sort == BoolSort() else BoolVal(False)
+    if isinstance(value, str):
+        if sort != StringSort():
+            return BoolVal(False)
+        if any(ord(character) > 0x2FFFF for character in value):
+            raise NotImplementedError("String literal exceeds the Z3 Unicode alphabet")
+        # Z3 interprets Unicode escapes in StringVal. Insert literal backslashes
+        # as characters so that a JSON string containing an escape stays literal.
+        parts = value.split("\\")
+        literal = StringVal(parts[0])
+        for part in parts[1:]:
+            literal = Concat(literal, Unit(CharVal("\\")), StringVal(part))
+        return var == literal
+    if isinstance(value, (int, float)):
+        if isinstance(value, float) and value.is_integer():
+            value = int(value)
+        if sort == IntSort() and isinstance(value, int):
+            return var == IntVal(value)
+        if sort == RealSort():
+            return var == RealVal(value)
+        return BoolVal(False)
+    if isinstance(value, list):
+        item_types = {float if type(item) is int else type(item) for item in value}
+        if len(item_types) > 1 or item_types - {str, float, bool, type(None)}:
+            raise NotImplementedError("Cannot model this array literal in Z3")
+        if sort not in ARRAY_WRAPPER_ACCESSORS:
+            return BoolVal(False)
+        array, length = ARRAY_WRAPPER_ACCESSORS[sort]
+        items = [_literal_constraint(Select(array(var), i), item) for i, item in enumerate(value)]
+        # The cells beyond the declared length are not part of the JSON value.
+        return And(length(var) == len(value), *items)
+    raise NotImplementedError(f"Cannot model a {type(value).__name__} literal in Z3")
 
 
 def build_constraints(var, schema):
     """
     Recursively build Z3 constraints from a JSON Schema.
     Supported keywords include:
-      - "enum"
+      - "const", "enum"
       - "anyOf", "allOf", "oneOf"
       - "not"
       - "if", "then", "else"
@@ -97,30 +108,11 @@ def build_constraints(var, schema):
     """
     constraint = True
 
-    # Global enum constraint.
+    if "const" in schema:
+        constraint = And(constraint, _literal_constraint(var, schema["const"]))
+
     if "enum" in schema:
-        enums = schema["enum"]
-        if enums:
-            first = enums[0]
-            if isinstance(first, list):
-                # For arrays, convert each Python list to an ArrayWrapper instance.
-                enum_consts = []
-                ArrayWrapper = var.sort()
-                for arr in enums:
-                    arr_term = make_array_from_list(arr, ArrayWrapper)
-                    array_value = ArrayWrapper.mkArrayWrapper(arr_term, len(arr))
-                    enum_consts.append(var == array_value)
-                constraint = And(constraint, Or(enum_consts))
-            elif isinstance(first, str):
-                constraint = And(constraint, Or([var == StringVal(e) for e in enums]))
-            elif isinstance(first, int):
-                constraint = And(constraint, Or([var == IntVal(e) for e in enums]))
-            elif isinstance(first, float):
-                constraint = And(constraint, Or([var == RealVal(e) for e in enums]))
-            elif isinstance(first, bool):
-                constraint = And(constraint, Or([var == BoolVal(e) for e in enums]))
-            elif first is None:
-                constraint = And(constraint, var == NullType.null)
+        constraint = And(constraint, Or([_literal_constraint(var, item) for item in schema["enum"]]))
 
     # anyOf: disjunction of subschemas.
     if "anyOf" in schema:
@@ -166,13 +158,15 @@ def build_constraints(var, schema):
             elif t == "array":
                 type_constraint.append(Or([var.sort() == aw for aw in ARRAY_WRAPPERS]))
             elif t == "integer":
-                type_constraint.append(var.sort() == IntSort())
+                type_constraint.append(IsInt(var) if var.sort() == RealSort() else var.sort() == IntSort())
             elif t == "number":
-                type_constraint.append(var.sort() == RealSort())
+                type_constraint.append(var.sort() in (IntSort(), RealSort()))
             elif t == "boolean":
                 type_constraint.append(var.sort() == BoolSort())
             elif t == "null":
                 type_constraint.append(var.sort() == NullType)
+            else:
+                raise NotImplementedError(f"Cannot model schema type {t!r} in Z3")
         constraint = And(constraint, Or(type_constraint))
 
     # Type-specific constraints.
@@ -199,23 +193,14 @@ def build_constraints(var, schema):
             i = Int('i')
             constraint = And(constraint, ForAll(i, Implies(And(i >= 0, i < len_accessor(var)),
                                                            build_constraints(Select(a_accessor(var), i), items_schema))))
-    elif var.sort() == IntSort():
+    elif var.sort() in (IntSort(), RealSort()):
         if "multipleOf" in schema:
             m = schema["multipleOf"]
-            constraint = And(constraint, var % m == 0)
-        if "exclusiveMinimum" in schema:
-            constraint = And(constraint, var > schema["exclusiveMinimum"])
-        elif "minimum" in schema:
-            constraint = And(constraint, var >= schema["minimum"])
-        if "exclusiveMaximum" in schema:
-            constraint = And(constraint, var < schema["exclusiveMaximum"])
-        elif "maximum" in schema:
-            constraint = And(constraint, var <= schema["maximum"])
-    elif var.sort() == RealSort():
-        if "multipleOf" in schema:
-            m = schema["multipleOf"]
-            k = Int('k_mult')
-            constraint = And(constraint, Exists(k, var == RealVal(m) * k))
+            if var.sort() == IntSort() and isinstance(m, int):
+                constraint = And(constraint, var % m == 0)
+            else:
+                k = FreshInt('k_mult')
+                constraint = And(constraint, Exists(k, var == RealVal(m) * k))
         if "exclusiveMinimum" in schema:
             constraint = And(constraint, var > schema["exclusiveMinimum"])
         elif "minimum" in schema:
@@ -240,7 +225,7 @@ SOLVER_UNDECIDED = "undecided"
 def solve_schema(schema):
     """
     Given a JSON Schema (as a dict), determine if there is a value that satisfies it.
-    Chooses a top-level Z3 variable based on the schema's "type" or by inferring from an "enum".
+    Uses the schema's declared top-level type when available, or tries all supported sorts.
     Returns (SOLVER_SAT, model, var) when a satisfying value was found,
     (SOLVER_UNSAT, None, var) when there is provably none, and
     (SOLVER_UNDECIDED, None, var) when no candidate type could be built, the
@@ -287,43 +272,8 @@ def solve_schema(schema):
             elif t == "null":
                 var_list.append(Const('x', NullType))
     else:
-        # Infer type from enum if provided.
-        if "enum" in schema and schema["enum"]:
-            first = schema["enum"][0]
-            if isinstance(first, list):
-                # Infer element type.
-                if len(first) > 0:
-                    sample = first[0]
-                    if isinstance(sample, str):
-                        var_list.append(Const('x', ArrayWrapper_string))
-                    elif isinstance(sample, int):
-                        var_list.append(Const('x', ArrayWrapper_integer))
-                    elif isinstance(sample, float):
-                        var_list.append(Const('x', ArrayWrapper_number))
-                    elif isinstance(sample, bool):
-                        var_list.append(Const('x', ArrayWrapper_boolean))
-                    elif sample is None:
-                        var_list.append(Const('x', ArrayWrapper_null))
-                    else:
-                        for aw in ARRAY_WRAPPERS:
-                            var_list.append(Const('x', aw))
-                else:
-                    for aw in ARRAY_WRAPPERS:
-                        var_list.append(Const('x', aw))
-            elif isinstance(first, str):
-                var_list.append(String('x'))
-            elif isinstance(first, int):
-                var_list.append(Int('x'))
-            elif isinstance(first, float):
-                var_list.append(Real('x'))
-            elif isinstance(first, bool):
-                var_list.append(Bool('x'))
-            elif first is None:
-                var_list.append(Const('x', NullType))
-        else:
-            var_list = [String('x'), Int('x'), Real('x'), Bool('x'), Const('x', NullType)]
-            for aw in ARRAY_WRAPPERS:
-                var_list.append(Const('x', aw))
+        var_list = [String('x'), Int('x'), Real('x'), Bool('x'), Const('x', NullType)]
+        var_list.extend(Const('x', aw) for aw in ARRAY_WRAPPERS)
 
     undecided = False
     var = None
@@ -407,42 +357,10 @@ def security_policy_subset_check(ori_policy, new_policy):
                         restriction_2
                     ]
                 }
-                var_type = None
-                if "type" in restriction_1:
-                    var_type = restriction_1["type"]
-                elif "type" in restriction_2:
-                    var_type = restriction_2["type"]
-                elif "enum" in restriction_1 and len(restriction_1["enum"]) > 0:
-                    first = restriction_1["enum"][0]
-                    if isinstance(first, list):
-                        var_type = "array"
-                    if isinstance(first, str):
-                        var_type = "string"
-                    elif isinstance(first, int):
-                        var_type = "integer"
-                    elif isinstance(first, float):
-                        var_type = "number"
-                    elif isinstance(first, bool):
-                        var_type = "boolean"
-                    elif first is None:
-                        var_type = "null"
-                elif "enum" in restriction_2 and len(restriction_2["enum"]) > 0:
-                    first = restriction_2["enum"][0]
-                    if isinstance(first, list):
-                        var_type = "array"
-                    if isinstance(first, str):
-                        var_type = "string"
-                    elif isinstance(first, int):
-                        var_type = "integer"
-                    elif isinstance(first, float):
-                        var_type = "number"
-                    elif isinstance(first, bool):
-                        var_type = "boolean"
-                    elif first is None:
-                        var_type = "null"
-                if var_type is not None:
-                    schema["type"] = var_type
-                    print("Found type:", var_type, file=sys.stderr)
+                # The old policy cannot restrict where we look for a value
+                # allowed only by the candidate policy.
+                if "type" in restriction_2:
+                    schema["type"] = restriction_2["type"]
                 status, model, var = solve_schema(schema)
                 if status == SOLVER_SAT:
                     print(f"Found counter example: {model[var]}", file=sys.stderr)
