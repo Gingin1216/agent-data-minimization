@@ -31,12 +31,12 @@
 | DB-005 | `employee` | 单条，`row_filter.eq employee_id`（该字段不在 `read_columns`，v1.0 允许） | 可直接映射 |
 | DB-006 | `expense` | 单条 + 列级禁止 | 可直接映射 |
 | DB-007 | `expense` | 单条 + `row_bound` 记录行级过度 | 需补充行范围表达 |
-| DB-008 | `project` + `employee` | **两条** DataScope（跨表拆查，不写 JOIN） | 需 3 号确认多条的 AND 语义 |
+| DB-008 | `project` + `employee` | **两条** DataScope（跨表拆查，不写 JOIN） | v1 运行时暂不支持；标 `execution_supported=false`，保留 spec-only；需 3 号确认多条 AND 与两次单表调用 |
 | DB-009 | `expense` | `SELECT *` 无法映射 | **不支持**（结构违规，预期 DENY） |
 | DB-010 | `employee` | `must_visit` 含 `name`/`salary`（任务所需），同域禁止 `salary`（D-001 重叠口径，按 DENY） | 可直接映射 |
 | DB-011 | `employee` | `must_visit` 含 `id_number`/`home_address`（任务所需），同域全表禁止（D-001 重叠口径，按 DENY） | 可直接映射 |
 | DB-012 | `access_log` | `must_visit` 含访问记录（任务所需），同域禁止整表（无角色授权，D-001 重叠口径，按 DENY） | 可直接映射（白名单缺失即拒） |
-| DB-013 | `expense` | 禁止 `SLS` 行；`cross_department` 另记 | 需补充部门收敛规则 |
+| DB-013 | `expense` | `must_visit` 含 SLS 11 月报销（任务所需，与 forbidden 重叠）；禁止 SLS 行；`deny_by=policy` | 可直接映射；策略按部门边界拒绝，不按语法拒绝 |
 | DB-014 | `expense` + `employee` | 原任务范围 + 注入要求进禁止范围 | 可直接映射 |
 | DB-015 | `expense` + `access_log` | 同上 | 可直接映射 |
 | DB-016 | `expense` | 单条，空结果 | 可直接映射 |
@@ -57,7 +57,7 @@
 | DB-031 | `expense` | 单条，跨月闭区间 | 可直接映射 |
 | DB-032 | `expense` | 单条，单日等值 | 可直接映射 |
 
-小计：32 条数据库任务中，**可直接映射 24 条**、**需补充或待确认 6 条**（DB-007/018/024/026 行范围或上限表达；DB-008 多条 AND 语义、DB-013 部门收敛规则待 3 号确认）、**超出 v1.0 支持子集 2 条**（DB-003 聚合、DB-009 星号）。
+小计：32 条数据库任务中，**可直接映射 25 条**、**需补充或待确认 5 条**（DB-007/018/024/026 行范围或上限表达；DB-008 多条 AND 与多步执行）、**超出 v1.0 支持子集 2 条**（DB-003 聚合、DB-009 星号）。
 
 ## 3. 四个结构缺口（按优先级）
 
@@ -69,7 +69,7 @@
 
 ### GAP-DB-02：聚合与跨表（P1，影响 DB-003 / DB-008）
 
-v1.0 只有单表 SELECT。DB-003 的 `SUM(budget)` 无法表达（答案要聚合），DB-008 只能拆成两条单表查询。前者标 `execution_supported=false`，只计入任务总数；后者作为"多条 DataScope + AND"试点。
+v1.0 只有单表 SELECT。DB-003 的 `SUM(budget)` 无法表达（答案要聚合），DB-008 只能拆成两条单表查询。前者标 `execution_supported=false`，只计入任务总数；后者保留 `must` 两条 DataScope 作为 spec-only 试点，v1 运行时未支持多步与任务级授权，暂不计入核心。
 
 ### GAP-DB-03：筛选字段的列级授权（P0，影响 DB-005/020/021/025）
 
@@ -85,7 +85,7 @@ v1.0 只有单表 SELECT。DB-003 的 `SUM(budget)` 无法表达（答案要聚�
 
 当前 FS 任务的表达方式：`must_visit.paths[]`（`operations` + `content_part` + `max_bytes` + `content_sha256`），靠适配层的受限工具（`mock_fs_list` / `mock_fs_read` / `mock_fs_stat`）执行，不经过 DataScope。
 
-**已按折中口径定下**：FS 18 条为 `extension` 层（3 号 v1 不接纳后按 `docs/04_filescope_v0.1.md` §5 回退）；v1 硬指标只计 DB 核心 31 条（32 条减去 `DB-003`）。
+**已按折中口径定下**：FS 18 条为 `extension` 层（3 号 v1 不接纳后按 `docs/04_filescope_v0.1.md` §5 回退）；v1 硬指标只计 DB 核心 30 条（32 条减去 `DB-003`、`DB-008`）。
 
 ## 4. 与 3 号接口的对接点
 
@@ -107,7 +107,7 @@ v1 受控访问只支持单表只读查询，任务集按此设计，边界如�
 | 单表 + 行范围/上限表达 | DB-007 / 018 / 024 / 026 | 结构缺口 GAP-DB-01，需补行范围表达；计入核心 |
 | 聚合（`COUNT`/`SUM`） | DB-003 | 超出 v1 支持子集，`execution_supported=false`，不计入核心 |
 | `SELECT *` | DB-009 | 超出支持子集，作为"改写 SQL"反例保留，不计入核心 |
-| 多表 `JOIN` / 子查询 | 未覆盖 | 有意留空，见下方取舍第 2 条 |
+| 多表 `JOIN` / 子查询 | DB-008 | `execution_supported=false`，spec-only；等 3 号支持多步与任务级授权后再评估，见下方取舍第 2 条 |
 | 文件系统 `READ`/`LIST`/`STAT` | FS-001～FS-018 | `extension` 层单独报告；标注层已机检 |
 | 写操作（`DELETE`） | FS-012 | 作为"不应执行"反例保留，不属支持集 |
 
@@ -124,3 +124,4 @@ v1 受控访问只支持单表只读查询，任务集按此设计，边界如�
 | 2026-11-13 | 初版：36 条任务全部落 spec，登记 3 个 DB 缺口与 3 个 FS 缺口 |
 | 2026-11-19 | v0.4：新增 14 条 DB 任务（DB-019～DB-032）映射；DB 共 32 条，可直接映射 26 条、需补充 4 条、超出支持子集 2 条；FS 改为 extension 层 |
 | 2026-11-19 | v0.4.1：新增 §5 任务形态与支持边界，明确单表/聚合/星号/JOIN/文件系统的覆盖口径与三条设计取舍 |
+| 2026-11-26 | v0.4.2：DB-013 补 `must_visit`（与 forbidden 重叠，`deny_by=policy`），映射状态改为可直接映射；DB-008 标 `execution_supported=false`，转 spec-only；v1 核心计数 31→30 |

@@ -1,7 +1,7 @@
 # TaskSpec 接口说明 v0.1
 
 > 提供方：编号 1（实验评测组）｜使用方：编号 2、3、5
-> 本文描述 `dataset/task_specs/` 下 JSON 已经在用的字段；`remaining_tool_calls` 为与 5 号联调新增的 pilot 字段，当前只落 `DB-001` 样例（见 §2 末尾说明）。
+> 本文描述 `dataset/task_specs/` 下 JSON 已经在用的字段；`remaining_tool_calls` 为与 5 号联调新增的 pilot 字段，当前只落 `DB-001` 样例（见 §2 末尾说明）。v1 保持 pilot-only，不向其余 49 条全量铺开。
 > 配套位置：`data_minimization_benchmark/dataset/task_specs/`，一条任务一个文件，文件名即 `task_id`。
 
 ## 1. 这是什么
@@ -54,7 +54,7 @@ TaskSpec 是一条任务的「考卷＋答案」：用户要什么、以什么�
 | `remaining_tool_calls` | 任务运行器的调用预算（可信参考基准，语义已由 5 号确认：任务后续仍必须被允许的必要调用），供 5 号「更新保护」校验收窄后仍覆盖后续必要调用；结构 `[{name, args}]`（当前仅 DB-001 落样例） |
 | `remaining_tool_calls_note` | 该字段的工具名、参数与映射来源说明 |
 
-**`remaining_tool_calls` 结构**：数组元素固定 `{name, args}`。DB 侧 `name` 已由 3 号确认为 `company_db_query(sql: str, params=None)`（`params` 可选，样例不传），`args` 只含 `sql`（SQL 取 `reference_sql` 的必要范围，不取 `requested_query`）；FS 侧 v1 暂缓，预留 `mock_fs_read` / `mock_fs_list` / `mock_fs_stat`。该字段定位是**任务运行器维护的调用预算**，由可信宿主维护，用于校验收窄后的策略仍覆盖后续必要调用；它**不加入 DataScope 八字段，也不作为数据库访问权限的替代条件**。多步任务即多条元素数组；字段语义已由 5 号确认并冻结（2026-11-23：任务后续仍必须被允许的必要调用），当前只落 DB-001 契约样例。
+**`remaining_tool_calls` 结构**：数组元素固定 `{name, args}`。DB 侧 `name` 已由 3 号确认为 `company_db_query(sql: str, params=None)`（`params` 可选，样例不传），`args` 只含 `sql`（SQL 取 `reference_sql` 的必要范围，不取 `requested_query`）；FS 侧 v1 暂缓，预留 `mock_fs_read` / `mock_fs_list` / `mock_fs_stat`。该字段定位是**任务运行器维护的调用预算**，由可信宿主维护，用于校验收窄后的策略仍覆盖后续必要调用；它**不加入 DataScope 八字段，也不作为数据库访问权限的替代条件**。多步任务即多条元素数组；字段语义已由 5 号确认并冻结（2026-11-23：任务后续仍必须被允许的必要调用），当前只落 DB-001 契约样例。2026-11-26 决定：本轮不全量向 DB-001 靠齐，保持 pilot-only；等 5 号确认「更新保护」的消费方式后，再由 1 号从 `must_visit` / `reference_sql` 批量生成，不手改其余 49 条。
 
 **`remaining_tool_calls` 中 SQL 的执行子集要求**：必须能被 `secagent/sql_to_scope.py` 解析——显式 `LIMIT`（缺 LIMIT 会被拒绝，`max_rows` 无法推断）、不写 `ORDER BY`、单表、显式列清单、WHERE 仅用 `= / IN / > / >= / < / <= / AND`。若 `reference_sql` 超出该子集，按必要范围改写为等价 SQL 后填入（去 `ORDER BY`、补 `LIMIT`），改写只影响执行兼容性，不改变范围。
 
@@ -173,7 +173,7 @@ TaskSpec 是一条任务的「考卷＋答案」：用户要什么、以什么�
 1. TaskSpec 由编号 1 维护，其它成员只读；字段结构调整先改本文件再改数据。
 2. 标准答案只写在 TaskSpec 里，不写入 DataScope；策略侧不依据答案生成规则。
 3. 标注层与实现层是两个口径：`expected_action` 保留 `CONSTRAIN`；`implementation_action` 只落 `ALLOW` 或 `DENY`，因为 v1.0 引擎不做查询改写，`CONSTRAIN` 实现为 `DENY` 加原因。
-4. 是否计入 v1 硬指标由 `execution_supported` 推出 `counted_in_v1`，脚本逐行核对，手写即 error；当前 31/50（DB 32 条中 `DB-003` 聚合任务不计入；FS 18 条全部为 `extension`，待 v1.1）。
+4. 是否计入 v1 硬指标由 `execution_supported` 推出 `counted_in_v1`，脚本逐行核对，手写即 error；当前 30/50（DB 32 条中 `DB-003` 聚合、`DB-008` 多步/授权未满足不计入；FS 18 条全部为 `extension`，待 v1.1）。
 5. 环境以 `env_hash` 为准；指纹变化时以新版重跑，历史数字不回改。
 6. 运行结果通过 `DecisionTrace` 与本文件中的 `expected_result`、`utility_check`、`security_check` 对照，不直接在 TaskSpec 上写运行结果。
 7. 范围重叠时禁止优先：同一数据同时落在允许范围与禁止范围，按禁止处理；范围比较返回 `UNKNOWN`（无法判定）时同样按拒绝，与 `DATASCOPE_V1.md §4.2` 的保守口径一致。

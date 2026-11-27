@@ -70,7 +70,7 @@ def main() -> None:
     #   第三组 v1.0 不接纳 FileScope（统一对接文档 v0.1），故 18 条 DB 任务为 core，
     #   18 条 FS 任务为 extension（单独出数，等 v1.1）。
     # counted_in_v1 = tier=core 且 execution_supported != false：
-    #   超出 DataScope v1.0 子集的任务（DB-003）与全部 FS 任务不计入 v1 硬指标分母。
+    #   超出 DataScope v1.0 子集的任务（DB-003）与多步/授权未满足的任务（DB-008）不计入 v1 硬指标分母。
     with OUT_SPLITS.open("w", encoding="utf-8", newline="") as f:
         w = csv.writer(f)
         w.writerow(["task_id", "split", "scenario", "structure", "tier", "counted_in_v1",
@@ -144,7 +144,7 @@ def main() -> None:
         kinds[u[3]] = kinds.get(u[3], 0) + 1
     print(f"eval units: {len(units)}  kinds={kinds}")
     print(f"tier=core: {core_total} 条（DB），tier=extension: {len(specs) - core_total} 条（FS，v1.1）")
-    print(f"counted_in_v1: {counted_total}/{len(specs)}（FileScope 回退口径；DB-003 超出 DataScope v1.0 子集）")
+    print(f"counted_in_v1: {counted_total}/{len(specs)}（FileScope 回退口径；DB-003 超出子集，DB-008 多步/授权未满足）")
     print(f"written: {OUT_SPLITS.name}, {OUT_UNITS.name}")
 
 

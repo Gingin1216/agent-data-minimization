@@ -5,6 +5,8 @@
 
 规则：
 * implementation_action=DENY 的任务，requested_query 必须被 sql_to_scope 拒绝；
+* implementation_action=DENY 且 deny_by=policy 的任务，requested_query 必须能转换，
+  由策略层按 deny_reason 拒绝（例如 DB-013 的跨部门边界）；
 * implementation_action=ALLOW 的任务，requested_query 必须成功转换，
   且转换结果与 must_visit.datascope[0] 一致。
 
@@ -60,6 +62,18 @@ def main() -> int:
         impl = spec.get("implementation_action", spec.get("expected_action"))
 
         if impl == "DENY":
+            if spec.get("deny_by") == "policy":
+                if not result.ok:
+                    errors.append(
+                        f"{spec['task_id']} 期望策略拒绝，但 SQL 语法转换失败：{result.reason}"
+                    )
+                else:
+                    rejected += 1
+                    print(
+                        f"POLICY {spec['task_id']} 语法通过，按策略拒绝："
+                        f"{spec.get('deny_reason', 'policy')}"
+                    )
+                continue
             if result.ok:
                 errors.append(f"{spec['task_id']} 期望拒绝，但 SQL 转换成功了")
             else:

@@ -62,7 +62,7 @@ python scripts\validate_tasks.py --check-env-hash
 | --- | --- | --- |
 | 任务总表 | 50（数据库 32 + 文件系统 18） | 已登记 |
 | 完整 TaskSpec | 50（数据库 32 + 文件系统 18） | 全部已写，待双人复核（50 条 `reviewer=pending`） |
-| 计入 v1 硬指标 | 31 / 50（FileScope 回退：DB 32 条核心 − `DB-003`；FS 18 条转 extension） | 由 `tier` + `execution_supported` 推出，脚本核对；达课题 30 条下限 |
+| 计入 v1 硬指标 | 30 / 50（FileScope 回退：DB 32 条核心 − `DB-003` − `DB-008`；FS 18 条转 extension） | 由 `tier` + `execution_supported` 推出，脚本核对；达课题 30 条下限 |
 | 任务划分 | smoke 13 / dev 19 / test 18 | 已生成（test 每类 ≥2） |
 | 评测单元 | 50（clean 44 / injection 5 / self_injection 1） | 已生成（`eval_units.csv`） |
 | 模拟数据库 | 5 表 / 191 行 | 可用 |
@@ -92,8 +92,8 @@ python scripts\validate_tasks.py --check-env-hash
 
 ## 5. 已知缺口
 
-1. FS 任务已按 `docs/04_filescope_v0.1.md` §5 回退为「DB 核心 + FS 扩展」（3 号 v1 不接纳 FileScope，2026-11-17）；2026-11-19 扩充 14 条 DB 任务（DB-019～DB-032），核心 32 条、计入 31 条，已过课题 30 条下限，test 核心正常类补到 2 条。
-2. 聚合 / JOIN / `SELECT *` 任务超出 v1.0 支持子集：DB-003 标 `execution_supported=false`（`counted_in_v1=false`），DB-009 作为「预期拒绝」保留但仍可执行；两者不进运行时硬指标的口径见 `docs/05_splits_and_eval_units.md` §3.1。
+1. FS 任务已按 `docs/04_filescope_v0.1.md` §5 回退为「DB 核心 + FS 扩展」（3 号 v1 不接纳 FileScope，2026-11-17）；2026-11-19 扩充 14 条 DB 任务（DB-019～DB-032），核心 32 条、计入 30 条（`DB-003` 聚合与 `DB-008` 多步/授权未纳入 v1 运行时），仍达课题 30 条下限；test 核心正常类补到 2 条。
+2. 聚合 / JOIN / `SELECT *` 任务超出 v1.0 支持子集：DB-003 标 `execution_supported=false`（`counted_in_v1=false`）；DB-008 因 JOIN 解析、两条 DataScope 多步执行和授权基线未满足，也标 `execution_supported=false`；DB-009 作为「预期拒绝」保留但仍可执行。三者不进运行时硬指标的口径见 `docs/05_splits_and_eval_units.md` §3.1。
 3. FS 侧 `content_sha256` 由 `validate_tasks.py` 自动核对（当前 12 处，按 LF 规范化）；DB 侧三条注入载体（`EXP-031/052/068`）由 `check_db_carriers.py` 自动核对（3 处，哈希算法为载体内容 sha256 前 16 位）。
 4. 运行时范围提取已由 3 号以 `sql_to_scope()` 实现（`secagent/sql_to_scope.py`）；9 条 `requested_query` 的拒绝原因由 `check_requested_scope.py` 逐行核对。剩余联调是把该解析接进受限工具的执行链路。
 
