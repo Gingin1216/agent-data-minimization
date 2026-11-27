@@ -8,9 +8,9 @@ from secagent.policy_analysis import SOLVER_SAT, SOLVER_UNDECIDED, SOLVER_UNSAT,
 from secagent.tool import get_current_config
 
 
-def setup_session(initial_restriction=None):
+def setup_session(initial_restriction=None, *, argument_type="string"):
     session = PolicySession(user_query="Read remaining x")
-    update_available_tools([{"name": "read", "description": "", "args": {"key": {"type": "string"}}}], session=session)
+    update_available_tools([{"name": "read", "description": "", "args": {"key": {"type": argument_type}}}], session=session)
     if initial_restriction is None:
         initial_restriction = {"enum": ["x", "y"]}
     rules = {"read": [(100, 0, {"key": initial_restriction}, 0)], "status": [(1, 0, {}, 0)]}
@@ -106,3 +106,45 @@ def test_integer_literal_matches_fractional_multiple_constraint():
 @pytest.mark.parametrize("literal", [{"label": "x"}, [[1]], [False, "x"], "\U0010ffff"])
 def test_unmodelled_const_leaves_proof_undecided(literal):
     assert solve_schema({"const": literal})[0] == SOLVER_UNDECIDED
+
+
+@pytest.mark.parametrize(
+    "schema",
+    [
+        {"type": "array", "uniqueItems": True},
+        {"type": "string", "items": {"contains": {"const": "x"}}},
+        {"anyOf": [{"const": "x"}, {"not": {"properties": {"label": {"type": "string"}}}}]},
+        {"$schema": "http://json-schema.org/draft-07/schema#", "type": "string"},
+    ],
+)
+def test_unmodelled_schema_keywords_leave_proof_undecided(schema):
+    assert solve_schema(schema)[0] == SOLVER_UNDECIDED
+
+
+def test_annotations_and_boolean_subschemas_remain_supported():
+    schema = {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "array",
+        "items": False,
+        "default": {"uniqueItems": True},
+        "description": "Only the empty array",
+    }
+    assert solve_schema({"allOf": [schema, {"const": []}]})[0] == SOLVER_SAT
+    assert solve_schema({**schema, "minItems": 1})[0] == SOLVER_UNSAT
+
+
+@pytest.mark.parametrize("bounds", [{"minimum": 3, "exclusiveMinimum": 0}, {"maximum": 1, "exclusiveMaximum": 3}])
+def test_inclusive_and_exclusive_numeric_bounds_both_apply(bounds):
+    assert solve_schema({"type": "number", "const": 2, **bounds})[0] == SOLVER_UNSAT
+
+
+def test_update_keeps_current_policy_when_schema_cannot_be_proved(monkeypatch):
+    monkeypatch.delenv("SECAGENT_ONLY_ALLOW_NARROW", raising=False)
+    fixed = {"type": "array", "const": ["x"]}
+    session = setup_session(fixed, argument_type="array")
+    before = get_current_config(session=session)
+    version = session.policy_version
+    update(session, {**fixed, "uniqueItems": True})
+    assert get_current_config(session=session) == before
+    assert session.policy_version == version
+    assert session.records[-1].validation_results[0].code == "policy_not_subset"

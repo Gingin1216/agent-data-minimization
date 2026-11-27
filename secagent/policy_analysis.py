@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
-from z3 import *
-from .role_analyzer import regex_to_z3_expr_search
 import sys
+
+from jsonschema import Draft202012Validator
+from z3 import *
+
+from .role_analyzer import regex_to_z3_expr_search
 
 # Define a global Z3 datatype for null.
 NullType = Datatype('NullType')
@@ -50,6 +53,40 @@ ARRAY_WRAPPER_ACCESSORS = {
     ArrayWrapper_null: (ArrayWrapper_null.a, ArrayWrapper_null.len)
 }
 
+_SCHEMA_SUBSCHEMAS = {"not", "if", "then", "else", "items"}
+_SCHEMA_GROUPS = {"anyOf", "allOf", "oneOf"}
+_SCHEMA_KEYWORDS = _SCHEMA_SUBSCHEMAS | _SCHEMA_GROUPS | {
+    "type", "const", "enum",
+    "pattern", "minLength", "maxLength",
+    "multipleOf", "minimum", "exclusiveMinimum", "maximum", "exclusiveMaximum",
+    "minItems", "maxItems",
+    # The runtime validator accepts these as annotations, without asserting them.
+    "$schema", "$comment", "title", "description", "default", "examples",
+    "deprecated", "readOnly", "writeOnly",
+}
+_SCHEMA_DIALECT = Draft202012Validator.META_SCHEMA["$id"]
+
+
+def _require_supported_schema(schema):
+    """Check all schema positions before solving any type-specific branch."""
+    if isinstance(schema, bool):
+        return
+    if not isinstance(schema, dict):
+        raise NotImplementedError("Expected a boolean or object schema")
+    if "$schema" in schema and schema["$schema"] not in (_SCHEMA_DIALECT, _SCHEMA_DIALECT + "#"):
+        raise NotImplementedError("Only the JSON Schema 2020-12 dialect is modelled")
+    unsupported = schema.keys() - _SCHEMA_KEYWORDS
+    if unsupported:
+        raise NotImplementedError(f"Unsupported schema keywords: {', '.join(sorted(unsupported))}")
+
+    for keyword in _SCHEMA_SUBSCHEMAS & schema.keys():
+        _require_supported_schema(schema[keyword])
+    for keyword in _SCHEMA_GROUPS & schema.keys():
+        if not isinstance(schema[keyword], list):
+            raise NotImplementedError(f"Expected a list of schemas for {keyword}")
+        for subschema in schema[keyword]:
+            _require_supported_schema(subschema)
+
 
 def _literal_constraint(var, value):
     """Match a JSON value without coercing it to a different Z3 sort."""
@@ -92,20 +129,14 @@ def _literal_constraint(var, value):
 
 
 def build_constraints(var, schema):
-    """
-    Recursively build Z3 constraints from a JSON Schema.
-    Supported keywords include:
-      - "const", "enum"
-      - "anyOf", "allOf", "oneOf"
-      - "not"
-      - "if", "then", "else"
-      - Type-specific keywords:
-            * string: {"pattern", "minLength", "maxLength"}
-            * number: {"multipleOf", "minimum", "exclusiveMinimum", "maximum", "exclusiveMaximum"}
-            * integer: {"multipleOf", "minimum", "exclusiveMinimum", "maximum", "exclusiveMaximum"}
-            * array: {"items", "minItems", "maxItems"}
-            * boolean, null
-    """
+    """Build Z3 constraints for a schema in the supported keyword subset."""
+    _require_supported_schema(schema)
+    return _build_constraints(var, schema)
+
+
+def _build_constraints(var, schema):
+    if isinstance(schema, bool):
+        return BoolVal(schema)
     constraint = True
 
     if "const" in schema:
@@ -116,31 +147,31 @@ def build_constraints(var, schema):
 
     # anyOf: disjunction of subschemas.
     if "anyOf" in schema:
-        branch_constraints = [build_constraints(var, subschema) for subschema in schema["anyOf"]]
+        branch_constraints = [_build_constraints(var, subschema) for subschema in schema["anyOf"]]
         constraint = And(constraint, Or(branch_constraints))
 
     # allOf: all subschemas must hold.
     if "allOf" in schema:
-        all_constraints = [build_constraints(var, subschema) for subschema in schema["allOf"]]
+        all_constraints = [_build_constraints(var, subschema) for subschema in schema["allOf"]]
         constraint = And(constraint, And(all_constraints))
 
     # oneOf: exactly one subschema must hold.
     if "oneOf" in schema:
-        oneof_constraints = [build_constraints(var, subschema) for subschema in schema["oneOf"]]
+        oneof_constraints = [_build_constraints(var, subschema) for subschema in schema["oneOf"]]
         constraint = And(constraint, Sum([If(c, 1, 0) for c in oneof_constraints]) == 1)
 
     # not: the subschema must not hold.
     if "not" in schema:
-        constraint = And(constraint, Not(build_constraints(var, schema["not"])))
+        constraint = And(constraint, Not(_build_constraints(var, schema["not"])))
 
     # if/then/else: conditional constraints.
     if "if" in schema:
-        if_constraint = build_constraints(var, schema["if"])
+        if_constraint = _build_constraints(var, schema["if"])
         if "then" in schema:
-            then_constraint = build_constraints(var, schema["then"])
+            then_constraint = _build_constraints(var, schema["then"])
             constraint = And(constraint, Implies(if_constraint, then_constraint))
         if "else" in schema:
-            else_constraint = build_constraints(var, schema["else"])
+            else_constraint = _build_constraints(var, schema["else"])
             constraint = And(constraint, Implies(Not(if_constraint), else_constraint))
 
     # Type check.
@@ -192,7 +223,7 @@ def build_constraints(var, schema):
             items_schema = schema["items"]
             i = Int('i')
             constraint = And(constraint, ForAll(i, Implies(And(i >= 0, i < len_accessor(var)),
-                                                           build_constraints(Select(a_accessor(var), i), items_schema))))
+                                                           _build_constraints(Select(a_accessor(var), i), items_schema))))
     elif var.sort() in (IntSort(), RealSort()):
         if "multipleOf" in schema:
             m = schema["multipleOf"]
@@ -203,11 +234,11 @@ def build_constraints(var, schema):
                 constraint = And(constraint, Exists(k, var == RealVal(m) * k))
         if "exclusiveMinimum" in schema:
             constraint = And(constraint, var > schema["exclusiveMinimum"])
-        elif "minimum" in schema:
+        if "minimum" in schema:
             constraint = And(constraint, var >= schema["minimum"])
         if "exclusiveMaximum" in schema:
             constraint = And(constraint, var < schema["exclusiveMaximum"])
-        elif "maximum" in schema:
+        if "maximum" in schema:
             constraint = And(constraint, var <= schema["maximum"])
     elif var.sort() == BoolSort():
         pass
@@ -231,9 +262,15 @@ def solve_schema(schema):
     (SOLVER_UNDECIDED, None, var) when no candidate type could be built, the
     solver timed out, or the schema used a construct that cannot be translated.
     """
+    try:
+        _require_supported_schema(schema)
+    except NotImplementedError as error:
+        print(f"solve_schema: {error}", file=sys.stderr)
+        return SOLVER_UNDECIDED, None, None
+
     var_list = []
     # Determine the top-level type.
-    if "type" in schema:
+    if isinstance(schema, dict) and "type" in schema:
         t = schema["type"]
         t_list = []
         if isinstance(t, list):
@@ -245,8 +282,9 @@ def solve_schema(schema):
                 var_list.append(String('x'))
             elif t == "array":
                 # Choose an array wrapper based on the "items" type if provided.
-                if "items" in schema and "type" in schema["items"]:
-                    item_type = schema["items"]["type"]
+                items = schema.get("items")
+                if isinstance(items, dict) and "type" in items:
+                    item_type = items["type"]
                     if item_type == "string":
                         var_list.append(Const('x', ArrayWrapper_string))
                     elif item_type == "integer":
@@ -279,7 +317,7 @@ def solve_schema(schema):
     var = None
     for var in var_list:
         try:
-            cons = build_constraints(var, schema)
+            cons = _build_constraints(var, schema)
             s = Solver()
             s.add(cons)
             s.set("timeout", 5000)
