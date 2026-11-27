@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from math import isfinite
 from typing import Any, Optional
 
 import sqlglot
@@ -102,8 +103,20 @@ def _bind_parameters(tree: exp.Expression, params: Any) -> exp.Expression:
 
 
 def _literal_value(node: exp.Expression) -> Any:
-    if isinstance(node, exp.Literal):
-        return node.to_py()
+    negative = isinstance(node, exp.Neg)
+    literal = node.this if negative else node
+    if isinstance(literal, exp.Literal) and (not negative or literal.is_number):
+        value = literal.to_py()
+        if literal.is_number:
+            if not isinstance(value, int):
+                value = float(value)
+            if negative:
+                value = -value
+            if isinstance(value, int) and not -(2**63) <= value < 2**63:
+                _reject("integer literal is outside SQLite's signed 64-bit range")
+            if isinstance(value, float) and not isfinite(value):
+                _reject("SQL numeric literal must be finite")
+        return value
     if isinstance(node, exp.Boolean):
         return node.this
     if isinstance(node, exp.Null):
