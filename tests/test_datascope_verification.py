@@ -195,3 +195,37 @@ def test_row_predicates_preserve_literal_string_contents(operator):
 def test_string_outside_z3_alphabet_cannot_prove_authorization():
     scope = make_scope(row_filter={"op": "eq", "field": "department", "value": "\U0010ffff"})
     assert check_data_scope(scope, scope, FIELD_TYPES).status is ScopeCheckStatus.UNKNOWN
+
+
+@pytest.mark.parametrize(
+    ("expression", "params", "amount"),
+    [
+        ("-2.5", None, -2.5),
+        ("?", (-2,), -2),
+        (":floor", {"floor": -2.5}, -2.5),
+        ("-9223372036854775808", None, -(2**63)),
+    ],
+)
+def test_sql_to_scope_accepts_signed_numbers(expression, params, amount):
+    parsed = sql_to_scope(
+        f"SELECT amount FROM expense WHERE amount >= {expression} LIMIT 3", params, {"expense": FIELD_TYPES},
+    )
+    predicate = {"op": "gte", "field": "amount", "value": amount}
+    assert parsed.ok, parsed.reason
+    assert parsed.scope.row_filter.model_dump() == predicate
+    assert check_data_scope(parsed.scope, make_scope(row_filter=predicate), FIELD_TYPES).status is ScopeCheckStatus.PROVED
+
+
+@pytest.mark.parametrize(
+    ("suffix", "reason"),
+    [
+        ("WHERE amount >= -9223372036854775809 LIMIT 3", "64-bit range"),
+        ("WHERE amount >= -1e400 LIMIT 3", "must be finite"),
+        ("LIMIT -1", "LIMIT must be a positive integer"),
+    ],
+)
+def test_sql_to_scope_rejects_unrepresentable_numbers_and_negative_limit(suffix, reason):
+    parsed = sql_to_scope(f"SELECT amount FROM expense {suffix}", None, {"expense": FIELD_TYPES})
+    assert parsed.ok is False
+    assert parsed.scope is None
+    assert reason in parsed.reason
